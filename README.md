@@ -156,6 +156,35 @@ You can stop the assistant at any time by clicking the microphone button again.
 
 ---
 
+## Deploying to Vercel
+
+The web UI portion of this application can be deployed to Vercel. However, there are significant limitations due to Vercel's serverless architecture:
+
+-   **The voice assistant (`main.py`) will NOT run.** Vercel does not support the kind of long-running background processes required for wake-word detection.
+-   **Local file storage is ephemeral.** Settings and tokens are not persisted. For a full deployment, you would need to adapt the code to use a database (like Supabase or Vercel's own storage solutions) for `settings.json` and `token.json`.
+
+This deployment is best for previewing the web interface or using it as a settings manager if the state were externalized.
+
+### Deployment Steps
+
+1.  **Fork this repository** and connect it to your Vercel account.
+
+2.  **Configure Environment Variables** in your Vercel project settings. You will need:
+    -   `OPENAI_API_KEY`
+    -   `ELEVEN_API_KEY`
+    -   `PICOVOICE_ACCESS_KEY`
+    -   `SUPABASE_URL`
+    -   `SUPABASE_KEY`
+    -   Also, copy the contents of your `credentials.json` into a Vercel environment variable named `GOOGLE_CREDENTIALS_JSON`. The application is configured to look for this if `credentials.json` is not found.
+
+3.  **Set the Build Command**: In Vercel's build settings, use the following:
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  **Deploy**. Vercel will use the `vercel.json` file to build and route the application correctly. The entry point will be `api/index.py`.
+
+---
+
 ## 1. Features
 
 • **Keyword commands** — Immediate replies for hard-coded phrases (e.g. "hello").

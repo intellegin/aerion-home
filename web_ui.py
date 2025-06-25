@@ -268,7 +268,23 @@ def google_logout():
     success = google_auth_helper.revoke_auth()
     return jsonify({'status': 'success' if success else 'failure'})
 
+def run_assistant_thread():
+    """A function to run the main assistant logic in a thread."""
+    from main import main as assistant_main
+    print("Assistant thread started.")
+    try:
+        assistant_main(web_ui_socket_port=5001)
+    except Exception as e:
+        print(f"Error in assistant thread: {e}")
+
 if __name__ == '__main__':
+    import threading
+
+    # Start the assistant logic in a background thread
+    # This makes the assistant start automatically with the web UI
+    assistant_thread = threading.Thread(target=run_assistant_thread, daemon=True)
+    assistant_thread.start()
+
     print("Starting Flask web UI with SocketIO...")
     print("Open your browser and go to http://127.0.0.1:5001")
-    socketio.run(app, debug=True, port=5001) 
+    socketio.run(app, host='0.0.0.0', port=5001, debug=True, use_reloader=True) 
