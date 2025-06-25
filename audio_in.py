@@ -63,7 +63,9 @@ DEFAULT_VAD_AGGRESSIVENESS = 2
 DEFAULT_PROMPT = (
     "The speaker is issuing informal English commands to an AI companion. "
     "Avoid interpreting short utterances as abbreviations like FEMA. "
-    "Common words include 'yeah', 'bro', 'dude', 'hello'. Respond with the exact transcription, no additional text."
+    "Common words include 'yeah', 'bro', 'dude', 'hello'. "
+    "Do not transcribe or produce profane language. "
+    "Respond with the exact transcription, no additional text."
 )
 
 
