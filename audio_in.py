@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import Optional
+import io
 
 import numpy as np  # type: ignore
 import sounddevice as sd  # type: ignore
@@ -71,7 +72,7 @@ def _rms(block: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(block))))
 
 
-def record_to_wav(
+def capture_audio_stream(
     max_seconds: float = 10.0,
     fs: int = DEFAULT_FS,
     channels: int = DEFAULT_CHANNELS,
@@ -79,8 +80,8 @@ def record_to_wav(
     rms_threshold: float = float(os.getenv("VAD_RMS_THRESHOLD", DEFAULT_RMS_THRESHOLD)),
     aggressiveness: int = int(os.getenv("VAD_AGGRESSIVENESS", DEFAULT_VAD_AGGRESSIVENESS)),
     silence_duration: float = 0.8,
-) -> str:
-    """Record microphone audio until `silence_duration` of quiet using WebRTC-VAD."""
+) -> bytes | None:
+    """Record microphone audio until silence and return it as a WAV bytes stream."""
 
     print("🎙️  Speak now (auto-stop on pause)… Press Ctrl+C to abort.")
 
@@ -149,24 +150,26 @@ def record_to_wav(
         raise SystemExit("Recording interrupted by user.") from None
 
     if not chunks:
-        # No speech captured; create an empty silent block to avoid crash
-        chunks.append(np.zeros((frame_length, channels), dtype="int16"))
+        # No speech captured
+        print("No speech detected.")
+        return None
 
     recording = np.concatenate(chunks, axis=0)
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    sf.write(tmp.name, recording, fs, subtype="PCM_16")
-    # Return path for transcription; will be deleted afterwards
-    return tmp.name
+    # Instead of writing to a file, write to an in-memory buffer
+    buffer = io.BytesIO()
+    sf.write(buffer, recording, fs, format='WAV', subtype='PCM_16')
+    buffer.seek(0)
+    return buffer.read()
 
 
 def transcribe_with_openai(
-    wav_path: str,
+    wav_bytes: bytes,
     model: str = "whisper-1",
     *,
     prompt: Optional[str] = DEFAULT_PROMPT,
 ) -> str:
-    """Send *wav_path* to OpenAI Whisper and return the transcribed text.
+    """Send *wav_bytes* to OpenAI Whisper and return the transcribed text.
 
     Uses the openai>=1.0 client interface.
     """
@@ -178,23 +181,21 @@ def transcribe_with_openai(
     client = OpenAI(api_key=api_key)  # type: ignore
 
     # Skip if audio too short (<0.1 s)
-    import soundfile as _sf
-    frames, sr = _sf.info(wav_path).frames, _sf.info(wav_path).samplerate
-    if frames / sr < 0.1:
-        os.remove(wav_path)
+    if len(wav_bytes) < 1000: # Heuristic for ~0.1s of WAV data
         return ""
 
-    with open(wav_path, "rb") as fp:
+    # Use an in-memory file-like object
+    with io.BytesIO(wav_bytes) as audio_stream:
+        # Pass the stream along with a tuple specifying the filename
+        file_tuple = ("audio.wav", audio_stream)
         print("🕊️  Transcribing with OpenAI Whisper …")
         transcription = client.audio.transcriptions.create(
             model=model,
-            file=fp,
+            file=file_tuple,
             prompt=prompt,
             response_format="text",
             language="en",
         )
-
-    os.remove(wav_path)  # cleanup temp file
 
     # The new client returns the text directly (when response_format="text").
     text: str = transcription  # type: ignore[assignment]
@@ -204,5 +205,7 @@ def transcribe_with_openai(
 
 def capture_and_transcribe() -> str:
     """Record until silence using VAD and immediately get its transcription."""
-    wav = record_to_wav()
-    return transcribe_with_openai(wav) 
+    audio_data = capture_audio_stream()
+    if not audio_data:
+        return ""
+    return transcribe_with_openai(audio_data) 
