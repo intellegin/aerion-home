@@ -26,35 +26,38 @@ def main() -> None:
     """
     Main loop for the voice assistant.
 
-    1. Listens for a wake word.
-    2. Captures audio until silence.
-    3. Transcribes the audio to text.
-    4. Gets a response from the command handler (or LLM).
-    5. Converts the response text to speech.
+    1. Listens for a wake word ('hotword').
+    2. Once detected, enters a 'conversation mode' loop.
+    3. In conversation mode, it continuously listens for commands and responds.
+    4. If it detects prolonged silence (timeout), it exits conversation mode
+       and goes back to listening for the wake word.
     """
     while True:
         # 1. Wait for the wake word
         if not listen_for_wake_word(keyword="computer"):
+            # This will only happen if there's an error or Ctrl+C
             print("Wake word detection failed or was interrupted. Exiting.")
             break
 
-        # 2. Capture and transcribe user's command
-        print("Wake word detected, now listening for command...")
-        try:
-            user_input = capture_and_transcribe()
-            if not user_input:
-                print("No user input received or transcribed.")
-                continue
-        except Exception as e:
-            print(f"An error occurred during transcription: {e}")
-            continue
+        # 2. Enter conversation mode
+        print("✅ Wake word detected. Starting conversation mode (15s timeout)...")
+        while True:
+            # 3. Listen for command with a timeout
+            try:
+                # Use a longer max_seconds to act as the conversation timeout
+                user_input = capture_and_transcribe(max_seconds=15.0)
+                if not user_input:
+                    print("… No speech detected for 15 seconds. Returning to wake word listening.")
+                    speak_async("Going back to sleep.")
+                    break  # Exit conversation loop
+            except Exception as e:
+                print(f"An error occurred during transcription: {e}")
+                break # Exit conversation loop on error
 
-        # 3. Get response
-        response = get_llm_response_or_execute_command(user_input)
-
-        # 4. Speak the response
-        if response:
-            speak_async(response)
+            # 4. Get and speak response
+            response = get_llm_response_or_execute_command(user_input)
+            if response:
+                speak_async(response)
 
 
 if __name__ == "__main__":

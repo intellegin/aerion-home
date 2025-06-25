@@ -83,8 +83,6 @@ def capture_audio_stream(
 ) -> bytes | None:
     """Record microphone audio until silence and return it as a WAV bytes stream."""
 
-    print("🎙️  Speak now (auto-stop on pause)… Press Ctrl+C to abort.")
-
     vad = webrtcvad.Vad(aggressiveness)
 
     frame_duration_ms = 30  # VAD accepts 10, 20, or 30 ms
@@ -96,7 +94,7 @@ def capture_audio_stream(
     speech_frames = 0  # consecutive voiced frames before start
     recording_started = False
     chunks: list[np.ndarray] = []
-    start_time = time.time()
+    last_speech_time = time.time()
 
     try:
         with sd.InputStream(
@@ -124,6 +122,7 @@ def capture_audio_stream(
                         speech_frames += 1
                         if speech_frames >= 3:  # need 3 consecutive speech frames (~90 ms)
                             recording_started = True
+                            print("🎙️  Recording started...")
                             # Cut off any current TTS right when voice starts
                             try:
                                 from speak import stop_speaking
@@ -134,20 +133,25 @@ def capture_audio_stream(
                             # backfill the buffered speech frames
                             chunks.extend([block])
                             silent_frames = 0
+                            last_speech_time = time.time()
                     else:
                         chunks.append(block)
                         silent_frames = 0
+                        last_speech_time = time.time()
                 else:
                     speech_frames = 0  # reset
                     if recording_started:
                         silent_frames += 1
                         if silent_frames >= frames_needed_for_silence:
-                            print("🛑 Detected silence, stopping recording.")
+                            print("🛑 Detected short silence, stopping recording.")
                             break
 
-                # Safety net
-                if time.time() - start_time > max_seconds:
-                    print("⏱️  Reached max recording time, stopping.")
+                # Timeout check
+                if time.time() - last_speech_time > max_seconds:
+                    print(f"⏱️  No speech for {max_seconds}s, stopping.")
+                    # If we weren't even recording, it's a true timeout.
+                    if not recording_started:
+                        return None
                     break
     except KeyboardInterrupt:
         raise SystemExit("Recording interrupted by user.") from None
@@ -206,9 +210,9 @@ def transcribe_with_openai(
     return text
 
 
-def capture_and_transcribe() -> str:
+def capture_and_transcribe(max_seconds: float = 15.0) -> str:
     """Record until silence using VAD and immediately get its transcription."""
-    audio_data = capture_audio_stream()
+    audio_data = capture_audio_stream(max_seconds=max_seconds)
     if not audio_data:
         return ""
     return transcribe_with_openai(audio_data) 
