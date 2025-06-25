@@ -34,7 +34,7 @@ def main() -> None:
     """
     while True:
         # 1. Wait for the wake word
-        if not listen_for_wake_word(keyword="jarvis"):
+        if not listen_for_wake_word(keyword="computer"):
             print("Wake word detection failed or was interrupted. Exiting.")
             break
 

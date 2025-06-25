@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-def listen_for_wake_word(keyword: str = "jarvis") -> bool:
+def listen_for_wake_word(keyword: str = "computer") -> bool:
     """
     Listens for a specific wake word using pvporcupine.
 
