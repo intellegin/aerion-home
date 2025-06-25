@@ -9,21 +9,21 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+]
 
 
-def get_calendar_service():
+def get_google_service(service_name: str, version: str):
     """
-    Authenticates with the Google Calendar API and returns a service object.
+    Generic function to authenticate with a Google API and return a service object.
     Handles the OAuth 2.0 flow and token management.
     """
     creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -34,16 +34,27 @@ def get_calendar_service():
                 )
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
         with open("token.json", "w") as token:
             token.write(creds.to_json())
     
     try:
-        service = build("calendar", "v3", credentials=creds)
+        service = build(service_name, version, credentials=creds)
         return service
     except HttpError as error:
         print(f"An error occurred: {error}")
         return None
+
+def get_calendar_service():
+    """Returns an authenticated Google Calendar service object."""
+    return get_google_service("calendar", "v3")
+
+def get_people_service():
+    """Returns an authenticated Google People service object."""
+    return get_google_service("people", "v1")
+
+def get_gmail_service():
+    """Returns an authenticated Gmail service object."""
+    return get_google_service("gmail", "v1")
 
 def list_calendars():
     """Lists all the user's calendars."""

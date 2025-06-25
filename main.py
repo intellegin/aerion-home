@@ -18,7 +18,7 @@ import time
 import threading
 import uuid
 
-from command_handler import handle_command
+from command_handler import handle_command, SYSTEM_PROMPT
 from audio_in import capture_and_transcribe, listen_for_speech
 from speak import speak_async, stop_speaking
 from wake_word_listener import listen_for_wake_word
@@ -45,6 +45,9 @@ def main() -> None:
         session_id = int(time.time())
         create_chat_session(session_id)
         
+        # Initialize conversation history with the system prompt
+        conversation_history = [SYSTEM_PROMPT]
+        
         # 2. Conversation Loop
         while True:
             print("Listening for command...")
@@ -58,7 +61,7 @@ def main() -> None:
             log_message(session_id=session_id, content=user_input, direction="outbound")
 
             # Get response from LLM
-            response = handle_command(user_input)
+            response = handle_command(user_input, conversation_history)
             
             if not response:
                 print("LLM returned no response. Listening again.")

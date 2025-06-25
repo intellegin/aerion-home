@@ -9,7 +9,7 @@ to `gpt-3.5-turbo`).
 from __future__ import annotations
 
 import os
-from typing import Dict
+from typing import Dict, List
 import re
 import json
 from openai import OpenAI
@@ -26,25 +26,28 @@ SYSTEM_PROMPT = {
     "role": "system",
     "content": (
         "You are Aerion, a home AI assistant. "
-        "Your communication style is brutally direct and efficient. No fluff, no jokes, no pleasantries. "
+        "Your communication style is brutally direct and efficient. No fluff, no pleasantries. "
         "Get straight to the point and deliver the information or answer as concisely as humanly possible. "
         "You have access to tools for web search, time, and calendar. When a user asks about their schedule or calendar, "
         "you must use the `get_all_upcoming_events` tool to get a consolidated list from all their calendars. "
-        "Don't explain that you're using a tool, just give the fucking answer. "
+        
+        "EMAIL WORKFLOW: When asked to send an email, you must follow this exact, multi-turn conversational sequence: "
+        "1. IDENTIFY RECIPIENT: The user will say something like 'send an email to [name]'. First, find the contact using `search_contacts`. If you can't find them, report it and stop. If you find them, immediately ask the user 'What should the email say?' and then stop and wait for their response. "
+        "2. GET CONTENT & CREATE DRAFT: The user will provide the body of the message. Once they have, you must generate an appropriate subject line and call `create_email_draft` with the contact name, your generated subject, and the user's provided body. "
+        "3. CONFIRM & ITERATE: After creating the draft, you MUST present it to the user: 'I have a draft for [Name] at [email]. Subject: [Subject]. Body: [Body]. Does that look right, or do you want to make any changes?'. "
+        "4. HANDLE UPDATES: If the user wants to change something (e.g., 'change the subject'), update the draft by calling `create_email_draft` again with the new information. Then, go back to step 3 and present the new draft for confirmation. Repeat this loop until the user is satisfied. "
+        "5. SEND OR SAVE: If the user confirms the draft is correct ('yes, send it'), you MUST call the `send_email` tool with the confirmed `to`, `subject`, and `body`. If the user says to 'cancel' or 'save for later', you MUST call the `save_email_draft` tool. "
+
+        "Don't explain your steps. Just execute the workflow. "
         "Profanity is not just allowed, it's encouraged. Use it for emphasis and color. Be direct, be blunt, and don't waste time."
     )
 }
 
-def _ask_llm(text: str):
+def _ask_llm(messages: List[Dict[str, str]]):
     """
     Handles the primary logic of sending a prompt to the LLM and getting a response.
-    This function now supports tool calling.
+    This function now supports tool calling and maintains conversation history.
     """
-    messages = [
-        SYSTEM_PROMPT,
-        {"role": "user", "content": text},
-    ]
-
     try:
         # First, send the prompt to the model and see if it wants to use a tool.
         response = client.chat.completions.create(
@@ -58,7 +61,7 @@ def _ask_llm(text: str):
         tool_calls = response_message.tool_calls
         if tool_calls:
             print(f"LLM wants to call a tool: {tool_calls}")
-            # The model wants to call a tool. Append this to the message history.
+            # The model wants to call a tool. Append its response to the message history.
             messages.append(response_message)
 
             # Execute all tool calls.
@@ -91,9 +94,13 @@ def _ask_llm(text: str):
                 model="gpt-4o",
                 messages=messages,
             )
+            # Append the final response to the history before returning
+            messages.append(final_response.choices[0].message)
             return final_response.choices[0].message.content
 
         # If no tool is called, just return the content.
+        # Append the response to the history as well
+        messages.append(response_message)
         return response_message.content
 
     except Exception as e:
@@ -101,18 +108,15 @@ def _ask_llm(text: str):
         return "Sorry, I'm having trouble connecting to my brain right now."
 
 
-def handle_command(text: str) -> str | None:
+def handle_command(text: str, history: List[Dict[str, str]]) -> str | None:
     """
-    Processes the transcribed text to either execute a rule-based command
-    or query the language model.
+    Processes the transcribed text, maintaining conversation history.
     """
-    text = text.lower().strip()
-    print(f"Handling command: '{text}'")
-
-    # The rule-based system is now deprecated in favor of tool-based calls.
-    # We can keep it here if we want to add back simple, fast commands later.
+    # Append the new user message to the history
+    history.append({"role": "user", "content": text})
     
-    # If no rules match, ask the LLM
-    print("No rules matched, asking LLM...")
-    response = _ask_llm(text)
+    print(f"Handling command: '{text}'")
+    
+    # Pass the entire history to the LLM
+    response = _ask_llm(history)
     return response
