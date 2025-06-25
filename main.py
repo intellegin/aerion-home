@@ -16,29 +16,45 @@ from __future__ import annotations
 
 import time
 
-import command_handler
+from command_handler import get_llm_response_or_execute_command
 from audio_in import capture_and_transcribe
-from speak import speak_sync
+from speak import speak_async
+from wake_word_listener import listen_for_wake_word
 
 
 def main() -> None:
-    print("Aerion AI (VOICE MODE) — Press Ctrl+C to quit.\n")
+    """
+    Main loop for the voice assistant.
 
+    1. Listens for a wake word.
+    2. Captures audio until silence.
+    3. Transcribes the audio to text.
+    4. Gets a response from the command handler (or LLM).
+    5. Converts the response text to speech.
+    """
     while True:
-        # Record → Transcribe (auto-stop on silence)
-        text = capture_and_transcribe().lower()
+        # 1. Wait for the wake word
+        if not listen_for_wake_word(keyword="Jarvis"):
+            print("Wake word detection failed or was interrupted. Exiting.")
+            break
 
-        if not text.strip():
-            print("(Silence detected.)\n")
-            time.sleep(0.5)
+        # 2. Capture and transcribe user's command
+        print("Wake word detected, now listening for command...")
+        try:
+            user_input = capture_and_transcribe()
+            if not user_input:
+                print("No user input received or transcribed.")
+                continue
+        except Exception as e:
+            print(f"An error occurred during transcription: {e}")
             continue
 
-        # Business logic
-        reply = command_handler.handle_command(text)
+        # 3. Get response
+        response = get_llm_response_or_execute_command(user_input)
 
-        # Output: print + speak
-        print(f"You (voice): {text}\nAerion : {reply}\n")
-        speak_sync(reply)
+        # 4. Speak the response
+        if response:
+            speak_async(response)
 
 
 if __name__ == "__main__":
