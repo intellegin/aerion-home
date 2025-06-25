@@ -108,8 +108,11 @@ def capture_audio_stream(
             while True:
                 block, _ = stream.read(frame_length)
 
+                # Convert block to normalized float32 for RMS calculation
+                block_float = block.astype(np.float32) / 32768.0
+
                 # 1. Volume check
-                if _rms(block) < rms_threshold:
+                if _rms(block_float) < rms_threshold:
                     is_speech = False
                 else:
                     # 2. VAD check (only if loud enough)
