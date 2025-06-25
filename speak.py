@@ -169,11 +169,13 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
 
             # If the provided voice looks like a name (not a 22-char id) resolve to id
             voice_id = voice
-            if len(voice) < 22:  # heuristic: IDs are 22 chars
+            if len(voice) < 22:
                 try:
-                    vs = client.voices.search(name=voice).voices  # type: ignore[attr-defined]
-                    if vs:
-                        voice_id = vs[0].voice_id  # type: ignore[attr-defined]
+                    all_voices = client.voices.search().voices  # type: ignore[attr-defined]
+                    for v in all_voices:
+                        if v.name.lower() == voice.lower():  # type: ignore[attr-defined]
+                            voice_id = v.voice_id  # type: ignore[attr-defined]
+                            break
                 except Exception:
                     pass
 
