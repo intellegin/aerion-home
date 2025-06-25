@@ -166,10 +166,20 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
 
         try:
             client = ElevenLabs(api_key=api_key)  # type: ignore[arg-type]
-            # choose reasonable defaults
+
+            # If the provided voice looks like a name (not a 22-char id) resolve to id
+            voice_id = voice
+            if len(voice) < 22:  # heuristic: IDs are 22 chars
+                try:
+                    vs = client.voices.search(name=voice).voices  # type: ignore[attr-defined]
+                    if vs:
+                        voice_id = vs[0].voice_id  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
             audio = client.text_to_speech.convert(
                 text=text,
-                voice_id=voice,
+                voice_id=voice_id,
                 model_id="eleven_multilingual_v2",
                 output_format="mp3_44100_128",
             )
