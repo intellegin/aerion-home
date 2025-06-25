@@ -26,6 +26,12 @@ try:
 except ImportError:
     OpenAI = None  # type: ignore
 
+# ElevenLabs client for TTS
+try:
+    from elevenlabs import generate as _eleven_generate, play as _eleven_play, set_api_key as _eleven_set_api_key  # type: ignore
+except ImportError:  # pragma: no cover
+    _eleven_generate = _eleven_play = _eleven_set_api_key = None  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Global state to manage interruption
@@ -144,6 +150,41 @@ def _speak_openai_sync(text: str, voice: str) -> bool:
         return False
 
 
+def _speak_eleven_sync(text: str, voice: str) -> bool:
+    """Use ElevenLabs TTS if API key and library are available. Returns True on success."""
+
+    if _eleven_generate is None:
+        return False
+
+    api_key = os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        return False
+
+    try:
+        _eleven_set_api_key(api_key)  # type: ignore[arg-type]
+        # elevenlabs SDK returns raw audio bytes (mp3). `play` handles playback via simpleaudio.
+        audio_data = _eleven_generate(text=text, voice=voice)  # type: ignore[arg-type]
+        _eleven_play(audio_data)  # type: ignore[arg-type]
+        return True
+    except Exception as exc:  # pragma: no cover
+        print(f"[ElevenLabs TTS error] {exc}")
+        return False
+
+
+def _speak_eleven_async(text: str) -> bool:
+    """Speak using ElevenLabs in a background thread (non-blocking)."""
+    if _eleven_generate is None:
+        return False
+    if not (os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")):
+        return False
+
+    def _worker():  # noqa: D401
+        _speak_eleven_sync(text, _current_voice())
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -153,6 +194,10 @@ def speak_async(text: str) -> None:
 
     # First stop anything that might still be playing
     stop_speaking()
+
+    # Prefer ElevenLabs if available
+    if _speak_eleven_async(text):
+        return
 
     if sys.platform.startswith("darwin"):
         # Prefer the native voice on macOS because it is reliable.
@@ -188,7 +233,11 @@ def speak_sync(text: str) -> None:
 
     voice = _current_voice()
 
-    # Try OpenAI TTS first if voice matches
+    # Prefer ElevenLabs if configured
+    if _speak_eleven_sync(text, voice):
+        return
+
+    # Next try OpenAI TTS
     if _speak_openai_sync(text, voice):
         return
 
