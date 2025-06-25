@@ -207,16 +207,25 @@ def transcribe_with_openai(
 
     Uses the openai>=1.0 client interface.
     """
+    # --- Check for minimum audio length before sending to OpenAI ---
+    try:
+        with io.BytesIO(wav_bytes) as buffer:
+            with sf.SoundFile(buffer, 'r') as sound_file:
+                # Get duration from metadata
+                duration = sound_file.frames / sound_file.samplerate
+                if duration < 0.1:
+                    print(f"🎤 Audio too short ({duration:.2f}s), skipping transcription.")
+                    return ""
+    except Exception as e:
+        print(f"Could not read audio duration: {e}. Skipping transcription.")
+        return ""
+
 
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set. Export it or add it to a .env file.")
 
     client = OpenAI(api_key=api_key)  # type: ignore
-
-    # Skip if audio too short (<0.1 s)
-    if len(wav_bytes) < 1000: # Heuristic for ~0.1s of WAV data
-        return ""
 
     # Use an in-memory file-like object
     with io.BytesIO(wav_bytes) as audio_stream:

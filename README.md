@@ -132,4 +132,29 @@ sudo systemctl start ai_communicator
 
 MIT License © 2024 Your Name
 
-Feel free to fork and improve.  PRs welcome! 
+Feel free to fork and improve.  PRs welcome!
+
+---
+
+## 10. Database Schema
+
+The application can log all conversations to a Supabase database. The table is named `messages` and has the following schema:
+
+| Column          | Type      | Description                                                                 |
+|-----------------|-----------|-----------------------------------------------------------------------------|
+| `id`            | `int4`    | Primary key, auto-incrementing.                                             |
+| `platform`      | `text`    | The platform the message originated from. Hardcoded to `"raspberry"`.         |
+| `source_id`     | `text`    | Nullable. Not currently used.                                               |
+| `from_user`     | `text`    | Identifier for the sender (`"user"` or `"aerion"`).                           |
+| `to_user`       | `text`    | Identifier for the recipient (`"aerion"` or `"user"`).                          |
+| `content`       | `text`    | The text content of the message.                                            |
+| `direction`     | `text`    | `"outbound"` for user -> AI, `"inbound"` for AI -> user.                     |
+| `method`        | `text`    | The method of communication. Hardcoded to `"voice"`.                          |
+| `agent_id`      | `int4`    | Nullable. Not currently used.                                               |
+| `email_id`      | `int4`    | Nullable. Not currently used.                                               |
+| `prompt_log_id` | `int4`    | Nullable. Not currently used.                                               |
+| `is_handled`    | `bool`    | Hardcoded to `true`.                                                        |
+| `message_type`  | `text`    | The type of message. Hardcoded to `"conversation"`.                         |
+| `created_at`    | `timestamp` | Automatically set to the time of insertion.                               |
+| `user_id`       | `int8`    | Nullable. Not currently used.                                               |
+| `chat_session_id` | `int4`    | A unique integer ID for each conversation session.                          | 

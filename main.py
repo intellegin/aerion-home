@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import time
 import threading
+import uuid
 
 from command_handler import handle_command
 from audio_in import capture_and_transcribe, listen_for_speech
 from speak import speak_async, stop_speaking
 from wake_word_listener import listen_for_wake_word
+from database import log_message, create_chat_session
 
 
 def main() -> None:
@@ -40,6 +42,8 @@ def main() -> None:
             break
 
         print("✅ Wake word detected. Starting conversation...")
+        session_id = int(time.time())
+        create_chat_session(session_id)
         
         # 2. Conversation Loop
         while True:
@@ -51,12 +55,16 @@ def main() -> None:
                 print("… Conversation timed out or empty audio. Returning to wake word listening.")
                 break  # Exit conversation loop, go back to waiting for wake word.
 
+            log_message(session_id=session_id, content=user_input, direction="outbound")
+
             # Get response from LLM
             response = handle_command(user_input)
             
             if not response:
                 print("LLM returned no response. Listening again.")
                 continue # Listen for the next command
+
+            log_message(session_id=session_id, content=response, direction="inbound")
 
             # Speak the response and listen for barge-in
             speaking_thread = speak_async(response)
