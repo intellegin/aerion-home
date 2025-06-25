@@ -14,14 +14,15 @@ try:
 except ImportError:
     pass
 
-def listen_for_wake_word(keyword: str = "Jarvis") -> bool:
+def listen_for_wake_word(keyword: str = "jarvis") -> bool:
     """
     Listens for a specific wake word using pvporcupine.
 
-    :param keyword: The wake word to listen for. Available options include:
-                    "Americano", "Blueberry", "Bumblebee", "Computer",
-                    "Grapefruit", "Grashopper", "Hey Google", "Hey Siri",
-                    "Jarvis", "Okay Google", "Picovoice", "Porcupine", "Terminator".
+    :param keyword: The wake word to listen for. All keywords are lowercase.
+                    Available options include: "americano", "blueberry",
+                    "bumblebee", "computer", "grapefruit", "grasshopper",
+                    "hey google", "hey siri", "jarvis", "okay google",
+                    "picovoice", "porcupine", "terminator".
     :return: True when the wake word is detected.
     """
     access_key = os.getenv("PICOVOICE_ACCESS_KEY")
