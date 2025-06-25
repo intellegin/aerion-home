@@ -64,12 +64,9 @@ def listen_for_wake_word(keyword: str = "jarvis") -> bool:
                     # Play a sound to indicate listening
                     try:
                         from speak import speak_sync
-                        # A non-verbal, quick sound is best. Let's use a simple "bing".
-                        # This part might need adjustment depending on TTS capabilities.
-                        # For now, we'll just announce it.
-                        # speak_sync("Listening") # This can be slow, maybe a sound file is better
-                    except Exception:
-                        pass
+                        speak_sync("Yes?")  # Provide audible feedback
+                    except Exception as e:
+                        print(f"Error playing feedback sound: {e}")
                     return True
 
     except KeyboardInterrupt:
