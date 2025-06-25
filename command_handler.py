@@ -19,6 +19,11 @@ from config import OPENAI_API_KEY
 from tools import tools, available_functions
 
 
+class RestartRequest(Exception):
+    """Custom exception to signal a user-requested restart."""
+    pass
+
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
@@ -111,7 +116,13 @@ def _ask_llm(messages: List[Dict[str, str]]):
 def handle_command(text: str, history: List[Dict[str, str]]) -> str | None:
     """
     Processes the transcribed text, maintaining conversation history.
+    First checks for special hard-coded commands like 'restart'.
     """
+    normalized_text = text.strip().lower()
+    if normalized_text in ("restart", "restart yourself", "restart the system", "system restart"):
+        print("💡 User requested restart.")
+        raise RestartRequest()
+
     # Append the new user message to the history
     history.append({"role": "user", "content": text})
     

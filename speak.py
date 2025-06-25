@@ -42,7 +42,7 @@ _process: Optional[subprocess.Popen] = None  # subprocess handle for say/espeak
 _lock = threading.Lock()
 
 # Default voice name if VOICE_NAME not supplied
-DEFAULT_VOICE = "alloy"
+DEFAULT_VOICE = "4YYIPFl9wE5c4L2eu2Gb"
 
 # OpenAI voice choices
 _OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}

@@ -5,6 +5,7 @@ from datetime import datetime
 import pytz
 from duckduckgo_search import DDGS
 from google_calendar import get_all_upcoming_events, get_people_service, get_gmail_service
+from thefuzz import process
 
 def get_current_time(timezone: str) -> str:
     """
@@ -41,61 +42,90 @@ def search_web(query: str) -> str:
 
 def search_contacts(name: str) -> str:
     """
-    Searches Google Contacts for a person by name and returns their contact info.
-    You will be prompted to grant permissions the first time this is run.
+    Searches all of the user's Google Contacts for a person by name and returns their contact info.
+    Uses fuzzy matching to find the best result, even with misspellings.
     """
     service = get_people_service()
     if not service:
         return "Could not connect to Google Contacts."
 
     try:
-        results = (
-            service.people()
-            .searchContacts(query=name, readMask="names,emailAddresses")
-            .execute()
-        )
+        # Get all connections (contacts)
+        all_people = []
+        page_token = None
+        while True:
+            results = (
+                service.people()
+                .connections()
+                .list(
+                    resourceName="people/me",
+                    personFields="names,emailAddresses,phoneNumbers",
+                    pageSize=1000,
+                    pageToken=page_token,
+                )
+                .execute()
+            )
+            all_people.extend(results.get("connections", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
         
-        people = results.get("results", [])
+        if not all_people:
+            return "No contacts found in your Google account."
 
-        if not people:
-            return f"No contact found for '{name}'."
-
-        contact_list = []
-        for person_result in people:
-            person = person_result.get("person", {})
+        # Create a dictionary of {displayName: person_object}
+        contacts_dict = {}
+        for person in all_people:
             names = person.get("names", [{}])
-            emails = person.get("emailAddresses", [{}])
-            
-            contact_list.append({
-                "name": names[0].get("displayName", "N/A"),
-                "email": emails[0].get("value", "N/A"),
-            })
+            if names and names[0].get("displayName"):
+                display_name = names[0]["displayName"]
+                contacts_dict[display_name] = person
         
-        return json.dumps(contact_list)
+        if not contacts_dict:
+            return "Could not find any contacts with names in your account."
+
+        # Use thefuzz to find the best match from the dictionary keys (the names)
+        best_match_name, score = process.extractOne(name, contacts_dict.keys())
+        
+        if score < 70: # You can adjust this threshold
+             return f"No close contact match found for '{name}'. Best guess was '{best_match_name}', but the confidence score ({score}) was too low."
+
+        best_match_person = contacts_dict[best_match_name]
+        
+        email = best_match_person.get("emailAddresses", [{}])[0].get("value", "N/A")
+
+        return json.dumps({
+            "name": best_match_name,
+            "email": email,
+        })
+
     except Exception as e:
         return f"An error occurred searching contacts: {e}"
 
 def create_email_draft(contact_name: str, subject: str, body: str) -> str:
     """
-    Finds a contact's email and prepares a draft.
+    Finds a contact's email using fuzzy search and prepares a draft.
     The AI should call this first, show the draft to the user for confirmation,
     and then call `send_email` upon confirmation.
     """
     print(f"Creating email draft for {contact_name}...")
     contact_json = search_contacts(contact_name)
     try:
-        contacts = json.loads(contact_json)
-        if not isinstance(contacts, list) or not contacts:
-             return f"Could not find a contact named {contact_name} to draft an email to. Please check the name."
+        # The search now returns a single best match object, not a list
+        contact = json.loads(contact_json)
+        if not isinstance(contact, dict) or not contact.get("email"):
+             return f"Could not find a contact named '{contact_name}' to draft an email to. Please check the name. The search result was: {contact_json}"
         
-        # For simplicity, use the first result if multiple are found.
-        recipient_email = contacts[0].get("email")
-        recipient_name = contacts[0].get("name", contact_name)
+        recipient_email = contact.get("email")
+        recipient_name = contact.get("name", contact_name)
 
         if not recipient_email or recipient_email == "N/A":
             return f"Found contact '{recipient_name}', but they do not have an email address."
     except (json.JSONDecodeError, IndexError):
+        # This will also catch errors from a failed search, passing the message along.
         return contact_json
+    except Exception as e:
+        return f"An unexpected error occurred while preparing the draft: {e}"
 
     draft = {
         "to": recipient_email,

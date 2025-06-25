@@ -48,17 +48,17 @@ except ImportError:
 import webrtcvad  # type: ignore
 
 # Default parameters for recording
-DEFAULT_FS = 48_000  # 48 kHz supported by webrtcvad and most hardware
+DEFAULT_FS = 16_000  # 16 kHz supported by webrtcvad and required by Leopard
 DEFAULT_CHANNELS = 1  # Mono recording
 
 # Minimum volume to trigger VAD check. Range 0.0–1.0.
 # This can be tuned down if your mic is quiet, or up in a noisy environment.
 # Set via `VAD_RMS_THRESHOLD` env var.
-DEFAULT_RMS_THRESHOLD = 0.02
+DEFAULT_RMS_THRESHOLD = 0.01
 
 # VAD aggressiveness, 0-3. 3 is most aggressive against non-speech.
 # Set via `VAD_AGGRESSIVENESS` env var.
-DEFAULT_VAD_AGGRESSIVENESS = 2
+DEFAULT_VAD_AGGRESSIVENESS = 1
 
 DEFAULT_PROMPT = ""
 
@@ -106,144 +106,81 @@ def capture_audio_stream(
     *,
     rms_threshold: float = float(os.getenv("VAD_RMS_THRESHOLD", DEFAULT_RMS_THRESHOLD)),
     aggressiveness: int = int(os.getenv("VAD_AGGRESSIVENESS", DEFAULT_VAD_AGGRESSIVENESS)),
-    silence_duration: float = 0.8,
+    silence_duration: float = 1.0,
 ) -> bytes | None:
-    """Record microphone audio until silence and return it as a WAV bytes stream."""
-
+    """
+    Record microphone audio using VAD until silence is detected.
+    Includes a pre-buffer to avoid clipping the start of speech.
+    """
     vad = webrtcvad.Vad(aggressiveness)
-
     frame_duration_ms = 30  # VAD accepts 10, 20, or 30 ms
-    frame_length = int(fs * frame_duration_ms / 1000)  # samples per frame
-
+    frame_length = int(fs * frame_duration_ms / 1000)
     frames_needed_for_silence = int(silence_duration * 1000 / frame_duration_ms)
 
-    silent_frames = 0
-    speech_frames = 0  # consecutive voiced frames before start
+    # Buffer to store audio chunks before speech is detected
+    pre_buffer = deque(maxlen=int(0.5 * fs / frame_length)) # ~0.5 seconds of pre-buffering
+    
     recording_started = False
     chunks: list[np.ndarray] = []
-    last_speech_time = time.time()
+    silent_frames = 0
+    start_time = time.time()
 
+    print("👂 Listening for command...")
     try:
         with sd.InputStream(
-            samplerate=fs,
-            channels=channels,
-            dtype="int16",
-            blocksize=frame_length,
+            samplerate=fs, channels=channels, dtype="int16", blocksize=frame_length
         ) as stream:
             while True:
+                # Timeout check
+                if not recording_started and time.time() - start_time > max_seconds:
+                    print(f"⏱️  No speech detected for {max_seconds}s, timing out.")
+                    return None
+
                 block, _ = stream.read(frame_length)
-
-                # Convert block to normalized float32 for RMS calculation
-                block_float = block.astype(np.float32) / 32768.0
-
-                # 1. Volume check
-                if _rms(block_float) < rms_threshold:
-                    is_speech = False
-                else:
-                    # 2. VAD check (only if loud enough)
-                    pcm_bytes = block.tobytes()
-                    is_speech = vad.is_speech(pcm_bytes, fs)
+                
+                is_speech = False
+                # VAD check only if volume is high enough
+                if _rms(block.astype(np.float32) / 32768.0) >= rms_threshold:
+                    if vad.is_speech(block.tobytes(), fs):
+                        is_speech = True
 
                 if is_speech:
                     if not recording_started:
-                        speech_frames += 1
-                        if speech_frames >= 3:  # need 3 consecutive speech frames (~90 ms)
-                            recording_started = True
-                            print("🎙️  Recording started...")
-                            # Cut off any current TTS right when voice starts
-                            try:
-                                from speak import stop_speaking
-
-                                stop_speaking()
-                            except Exception:
-                                pass
-                            # backfill the buffered speech frames
-                            chunks.extend([block])
-                            silent_frames = 0
-                            last_speech_time = time.time()
-                    else:
-                        chunks.append(block)
-                        silent_frames = 0
-                        last_speech_time = time.time()
+                        recording_started = True
+                        print("🎙️  Recording started...")
+                        try: # Stop any TTS
+                            from speak import stop_speaking
+                            stop_speaking()
+                        except Exception: pass
+                        
+                        # Add the pre-buffered audio to the recording
+                        chunks.extend(list(pre_buffer))
+                        pre_buffer.clear()
+                    
+                    chunks.append(block)
+                    silent_frames = 0
                 else:
-                    speech_frames = 0  # reset
-                    if recording_started:
+                    if not recording_started:
+                        # Keep filling the pre-buffer
+                        pre_buffer.append(block)
+                    else:
+                        # We are recording, and this is a silent frame
+                        chunks.append(block) # record the silence too
                         silent_frames += 1
                         if silent_frames >= frames_needed_for_silence:
-                            print("🛑 Detected short silence, stopping recording.")
+                            print("🛑 Detected silence, stopping recording.")
                             break
-
-                # Timeout check
-                if time.time() - last_speech_time > max_seconds:
-                    print(f"⏱️  No speech for {max_seconds}s, stopping.")
-                    # If we weren't even recording, it's a true timeout.
-                    if not recording_started:
-                        return None
-                    break
     except KeyboardInterrupt:
         raise SystemExit("Recording interrupted by user.") from None
 
     if not chunks:
-        # No speech captured
-        print("No speech detected.")
         return None
 
     recording = np.concatenate(chunks, axis=0)
-
-    # Instead of writing to a file, write to an in-memory buffer
     buffer = io.BytesIO()
     sf.write(buffer, recording, fs, format='WAV', subtype='PCM_16')
     buffer.seek(0)
     return buffer.read()
-
-
-def transcribe_with_openai(
-    wav_bytes: bytes,
-    model: str = "whisper-1",
-    *,
-    prompt: Optional[str] = DEFAULT_PROMPT,
-) -> str:
-    """Send *wav_bytes* to OpenAI Whisper and return the transcribed text.
-
-    Uses the openai>=1.0 client interface.
-    """
-    # --- Check for minimum audio length before sending to OpenAI ---
-    try:
-        with io.BytesIO(wav_bytes) as buffer:
-            with sf.SoundFile(buffer, 'r') as sound_file:
-                # Get duration from metadata
-                duration = sound_file.frames / sound_file.samplerate
-                if duration < 0.1:
-                    print(f"🎤 Audio too short ({duration:.2f}s), skipping transcription.")
-                    return ""
-    except Exception as e:
-        print(f"Could not read audio duration: {e}. Skipping transcription.")
-        return ""
-
-
-    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set. Export it or add it to a .env file.")
-
-    client = OpenAI(api_key=api_key)  # type: ignore
-
-    # Use an in-memory file-like object
-    with io.BytesIO(wav_bytes) as audio_stream:
-        # Pass the stream along with a tuple specifying the filename
-        file_tuple = ("audio.wav", audio_stream)
-        print("🕊️  Transcribing with OpenAI Whisper …")
-        transcription = client.audio.transcriptions.create(
-            model=model,
-            file=file_tuple,
-            prompt=prompt,
-            response_format="text",
-            language="en",
-        )
-
-    # The new client returns the text directly (when response_format="text").
-    text: str = transcription  # type: ignore[assignment]
-    print(f"✍️  Transcribed text: {text}")
-    return text
 
 
 def capture_and_transcribe(max_seconds: float = 15.0) -> str:
@@ -251,4 +188,19 @@ def capture_and_transcribe(max_seconds: float = 15.0) -> str:
     audio_data = capture_audio_stream(max_seconds=max_seconds)
     if not audio_data:
         return ""
-    return transcribe_with_openai(audio_data) 
+
+    # Check for minimum audio length before processing
+    try:
+        with io.BytesIO(audio_data) as buffer:
+            with sf.SoundFile(buffer, 'r') as sound_file:
+                duration = sound_file.frames / sound_file.samplerate
+                if duration < 0.2:  # Leopard has a minimum audio length
+                    print(f"🎤 Audio too short ({duration:.2f}s), skipping transcription.")
+                    return ""
+    except Exception as e:
+        print(f"Could not read audio duration: {e}. Skipping transcription.")
+        return ""
+    
+    # Use the new on-device transcription
+    from transcribe_leopard import transcribe_with_leopard
+    return transcribe_with_leopard(audio_data) 
