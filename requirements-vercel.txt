@@ -1,0 +1,10 @@
+Flask==3.0.3
+Flask-Cors==4.0.1
+Flask-SocketIO
+python-socketio
+eventlet
+google-api-python-client==2.130.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2
+elevenlabs
+urllib3<2.0 

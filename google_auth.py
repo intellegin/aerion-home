@@ -21,15 +21,34 @@ TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'credentials.json'
 
 def get_google_flow(redirect_uri: str) -> Flow:
-    """Creates a Google OAuth Flow object."""
-    if not os.path.exists(CREDENTIALS_FILE):
-        raise FileNotFoundError(f"'{CREDENTIALS_FILE}' not found.")
+    """
+    Creates a Google OAuth Flow object from an environment variable or a local file.
+    """
+    client_config = None
+    creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+
+    if creds_json_str:
+        try:
+            client_config = json.loads(creds_json_str)
+        except json.JSONDecodeError:
+            raise ValueError("Failed to parse GOOGLE_CREDENTIALS_JSON.")
+        
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=redirect_uri
+        )
+    elif os.path.exists(CREDENTIALS_FILE):
+        flow = Flow.from_client_secrets_file(
+            CREDENTIALS_FILE,
+            scopes=SCOPES,
+            redirect_uri=redirect_uri
+        )
+    else:
+        raise FileNotFoundError(
+            f"Neither '{CREDENTIALS_FILE}' not found, nor 'GOOGLE_CREDENTIALS_JSON' env var set."
+        )
     
-    flow = Flow.from_client_secrets_file(
-        CREDENTIALS_FILE,
-        scopes=SCOPES,
-        redirect_uri=redirect_uri
-    )
     return flow
 
 def get_auth_url(redirect_uri: str) -> str:

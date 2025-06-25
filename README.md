@@ -177,11 +177,12 @@ This deployment is best for previewing the web interface or using it as a settin
     -   `SUPABASE_KEY`
     -   Also, copy the contents of your `credentials.json` into a Vercel environment variable named `GOOGLE_CREDENTIALS_JSON`. The application is configured to look for this if `credentials.json` is not found.
 
-3.  **Set the Build Command**: In Vercel's build settings, use the following:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Deploy**. Vercel will use the `vercel.json` file to build and route the application correctly. The entry point will be `api/index.py`.
+3.  **Check Build Settings (Optional)**:
+    -   You can leave the Build & Development Settings in the Vercel UI as their defaults. The `vercel.json` file in this repository will automatically override them.
+    -   **Install Command**: It will use `pip install -r requirements-vercel.txt` as specified in `vercel.json`.
+    -   **Build Command & Output Directory**: These are handled automatically by the `@vercel/python` builder.
+
+4.  **Deploy**. Vercel will use the `vercel.json` file to build and route the application correctly using the lightweight requirements.
 
 ---
 
