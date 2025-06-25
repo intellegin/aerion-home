@@ -171,7 +171,7 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
                 text=text,
                 voice_id=voice,
                 model_id="eleven_multilingual_v2",
-                output_format="wav",
+                output_format="mp3_44100_128",
             )
             from elevenlabs import play as _new_play  # type: ignore
             _new_play(audio)  # type: ignore[arg-type]
