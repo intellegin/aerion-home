@@ -212,12 +212,22 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
 
 def _speak_eleven_async(text: str) -> bool:
     """Speak using ElevenLabs in a background thread (non-blocking)."""
-    if _eleven_generate is None:
-        return False
+    # Quick check for API key before starting thread.
     if not (os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")):
         return False
 
-    def _worker():  # noqa: D401
+    # Check for either old or new SDK
+    try:
+        from elevenlabs.client import ElevenLabs as _ElevenLabsClient
+        sdk_v2_present = True
+    except ImportError:
+        sdk_v2_present = False
+    
+    if _eleven_generate is None and not sdk_v2_present:
+        return False
+
+    def _worker():
+        """Worker thread to call the synchronous speak method."""
         _speak_eleven_sync(text, _current_voice())
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -306,3 +316,4 @@ def speak_sync(text: str) -> None:
         return
 
     print("(TTS unavailable — install pyttsx3, or 'say'/'espeak'.)")
+
