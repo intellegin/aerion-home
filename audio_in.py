@@ -50,6 +50,15 @@ import webrtcvad  # type: ignore
 DEFAULT_FS = 48_000  # 48 kHz supported by webrtcvad and most hardware
 DEFAULT_CHANNELS = 1  # Mono recording
 
+# Minimum volume to trigger VAD check. Range 0.0–1.0.
+# This can be tuned down if your mic is quiet, or up in a noisy environment.
+# Set via `VAD_RMS_THRESHOLD` env var.
+DEFAULT_RMS_THRESHOLD = 0.02
+
+# VAD aggressiveness, 0-3. 3 is most aggressive against non-speech.
+# Set via `VAD_AGGRESSIVENESS` env var.
+DEFAULT_VAD_AGGRESSIVENESS = 2
+
 DEFAULT_PROMPT = (
     "The speaker is issuing informal English commands to an AI companion. "
     "Avoid interpreting short utterances as abbreviations like FEMA. "
@@ -67,7 +76,8 @@ def record_to_wav(
     fs: int = DEFAULT_FS,
     channels: int = DEFAULT_CHANNELS,
     *,
-    aggressiveness: int = 2,  # 0–3; 2 is balanced
+    rms_threshold: float = float(os.getenv("VAD_RMS_THRESHOLD", DEFAULT_RMS_THRESHOLD)),
+    aggressiveness: int = int(os.getenv("VAD_AGGRESSIVENESS", DEFAULT_VAD_AGGRESSIVENESS)),
     silence_duration: float = 0.8,
 ) -> str:
     """Record microphone audio until `silence_duration` of quiet using WebRTC-VAD."""
@@ -97,8 +107,13 @@ def record_to_wav(
             while True:
                 block, _ = stream.read(frame_length)
 
-                pcm_bytes = block.tobytes()
-                is_speech = vad.is_speech(pcm_bytes, fs)
+                # 1. Volume check
+                if _rms(block) < rms_threshold:
+                    is_speech = False
+                else:
+                    # 2. VAD check (only if loud enough)
+                    pcm_bytes = block.tobytes()
+                    is_speech = vad.is_speech(pcm_bytes, fs)
 
                 if is_speech:
                     if not recording_started:
