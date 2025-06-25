@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block title %}View {{ filename }}{% endblock %}
+
+{% block content %}
+<style>
+    .code-view {
+        background-color: #f9f9f9;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 15px;
+        font-family: monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;       /* CSS3 */
+        white-space: -moz-pre-wrap;  /* Mozilla, since 1999 */
+        white-space: -pre-wrap;      /* Opera 4-6 */
+        white-space: -o-pre-wrap;    /* Opera 7 */
+        word-wrap: break-word;       /* Internet Explorer 5.5+ */
+        min-height: 60vh;
+    }
+</style>
+
+<h2>Viewing: {{ filename }} (Read-only)</h2>
+<pre class="code-view"><code>{{- content -}}</code></pre>
+{% endblock %} 

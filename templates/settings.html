@@ -1,0 +1,92 @@
+{% extends "layout.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<style>
+    #settings-form h3 { margin-top: 0; }
+    #voice-list-container label { display: block; margin-bottom: 10px; cursor: pointer; }
+    .save-btn { background-color: #007BFF; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 15px; }
+    .save-btn:hover { background-color: #0056b3; }
+    .voice-source-desc { font-size: 14px; color: #6c757d; margin-top: -5px; margin-bottom: 15px; }
+    .voice-source-desc a { color: #007BFF; }
+</style>
+
+<form id="settings-form">
+    <h3>Text-to-Speech Voice</h3>
+    <p class="voice-source-desc">
+        Voices are provided by <a href="https://elevenlabs.io/" target="_blank">ElevenLabs</a>.
+    </p>
+    <p>Select a voice for the assistant. Changes will apply after restarting the assistant.</p>
+    <div id="voice-list-container">
+        <p>Loading voices...</p>
+    </div>
+    <button type="submit" class="save-btn">Save Settings</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const voiceListContainer = document.getElementById('voice-list-container');
+    const settingsForm = document.getElementById('settings-form');
+    let currentSettings = {};
+
+    function loadSettingsAndVoices() {
+        const settingsPromise = fetch('/api/settings').then(res => res.json());
+        const voicesPromise = fetch('/api/voices').then(res => res.json());
+
+        Promise.all([settingsPromise, voicesPromise]).then(([settings, voices]) => {
+            currentSettings = settings;
+            voiceListContainer.innerHTML = ''; // Clear loading message
+
+            if (voices && voices.length > 0) {
+                voices.forEach(voice => {
+                    const label = document.createElement('label');
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = 'voice_id';
+                    radio.value = voice.id;
+                    if (voice.id === settings.voice_id) {
+                        radio.checked = true;
+                    }
+                    
+                    label.appendChild(radio);
+                    label.appendChild(document.createTextNode(` ${voice.name}`));
+                    voiceListContainer.appendChild(label);
+                });
+            } else {
+                voiceListContainer.innerHTML = '<p>Could not load voices. Is the ELEVEN_API_KEY set?</p>';
+            }
+        }).catch(error => {
+            console.error('Error loading settings or voices:', error);
+            voiceListContainer.innerHTML = '<p>Error loading settings.</p>';
+        });
+    }
+
+    settingsForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const formData = new FormData(settingsForm);
+        const newVoiceId = formData.get('voice_id');
+        
+        if (newVoiceId) {
+            const newSettings = { ...currentSettings, voice_id: newVoiceId };
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newSettings)
+            }).then(res => res.json()).then(data => {
+                if(data.status === 'success') {
+                    alert('Settings saved! The new voice will take effect the next time the assistant starts.');
+                } else {
+                    alert('Error saving settings.');
+                }
+            });
+        } else {
+            alert('Please select a voice.');
+        }
+    });
+
+    loadSettingsAndVoices();
+});
+</script>
+{% endblock %} 

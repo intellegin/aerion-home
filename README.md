@@ -1,6 +1,158 @@
-# Pi-5 AI Communicator
+# Pi-5 AI Voice Assistant
 
-A lightweight Python project that turns a Raspberry Pi 5 into an AI-powered conversational device.  It combines simple rule-based responses (the current `command_handler.py`) with the option to fall back to an OpenAI Large Language Model (LLM) for anything more complex.
+This project transforms a computer (originally a Raspberry Pi 5, now platform-agnostic) into a sophisticated, voice-controlled AI assistant. It features a modular architecture with a decoupled frontend and backend, real-time communication, and integrations with external services like Google and ElevenLabs.
+
+---
+
+## Architecture Overview
+
+The system is split into two main processes that communicate in real time:
+
+1.  **Web UI (`web_ui.py`)**: A Flask application that serves as the control panel and process manager. It provides a web interface to start/stop the assistant, manage settings, and handle authentication.
+2.  **Assistant (`main.py`)**: The core voice assistant logic. It handles wake-word detection, audio transcription, command processing via an LLM, and text-to-speech responses.
+
+Communication between the frontend (browser), the web UI server, and the assistant process is handled by **Socket.IO**, enabling real-time status updates and commands (e.g., voice-based UI navigation).
+
+```mermaid
+graph TD
+    subgraph Browser
+        A[Web UI - index.html]
+    end
+
+    subgraph Web Server (Flask)
+        B(web_ui.py)
+        C{settings.json}
+        D{google_token.json}
+    end
+    
+    subgraph Assistant Process
+        E(main.py)
+        F[Wake Word]
+        G[Audio Transcription]
+        H[LLM Command Handler]
+        I[Tools - Google, Web, etc.]
+        J[Text-to-Speech]
+    end
+
+    A -- HTTP/Socket.IO --> B
+    B -- Manages --> E
+    B -- Reads/Writes --> C
+    B -- Manages --> D
+
+    E -- Socket.IO --> B
+    B -- Socket.IO --> A
+
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    H --> J
+    I -- response --> H
+```
+
+---
+
+## Key Components
+
+-   **`web_ui.py`**: Flask-based web server.
+    -   Starts/stops the `main.py` process.
+    -   Serves the HTML/CSS/JS frontend.
+    -   Handles Google OAuth2 authentication flow.
+    -   Provides API endpoints for settings and voice model management.
+    -   Uses Socket.IO to push real-time status updates to the browser.
+
+-   **`main.py`**: The main assistant loop.
+    -   Connects to the `web_ui.py` server via a Socket.IO client.
+    -   **Wake Word**: Uses `pvporcupine` to listen for a wake word (e.g., "Jarvis").
+    -   **Transcription**: Captures microphone audio and transcribes it locally using **Picovoice Leopard** for fast, on-device performance.
+    -   **Command Handling (`command_handler.py`)**: Sends the transcribed text and conversation history to an OpenAI LLM.
+    -   **Text-to-Speech (`speak.py`)**: Synthesizes the LLM's response into audio using **ElevenLabs**.
+    -   **Crash Resilience**: Automatically restarts its main loop upon encountering an error.
+
+-   **`tools.py`**: A collection of functions the LLM can call to interact with the outside world.
+    -   `search_web`: Searches the web with DuckDuckGo.
+    -   `get_all_upcoming_events`: Fetches Google Calendar events.
+    -   `search_contacts`: Fuzzy-searches Google Contacts.
+    -   `create_email_draft`, `send_email`: Manages Gmail.
+    -   `navigate_ui`: Sends a command via Socket.IO to change the active tab in the web UI.
+
+-   **`socket_client.py`**: A shared Socket.IO client instance to prevent circular import errors between `main.py` and `tools.py`.
+
+-   **`templates/index.html`**: A single-page application that serves as the frontend.
+    -   Displays the assistant's status (running/stopped) and the currently selected voice.
+    -   Provides a UI to select and save an ElevenLabs voice (`settings.json`).
+    -   Handles the Google authentication process.
+    -   Receives real-time updates and navigation commands from the backend via Socket.IO.
+
+-   **`database.py`**: Logs all conversations to a Supabase PostgreSQL database for history and analysis.
+
+---
+
+## Setup and Installation
+
+### 1. Prerequisites
+- Python 3.9+
+- An internet connection
+
+### 2. Clone the repository and install dependencies:
+```bash
+git clone <your-repo-url>
+cd <repository-name>
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Environment Variables
+Create a `.env` file in the project root and add the following keys. You can get these from their respective services.
+
+```env
+# OpenAI for the language model
+OPENAI_API_KEY="sk-..."
+
+# ElevenLabs for Text-to-Speech
+ELEVEN_API_KEY="..."
+VOICE_NAME="..." # Optional: Default voice ID
+
+# Picovoice for on-device wake-word and transcription
+PICOVOICE_ACCESS_KEY="..."
+
+# Supabase for logging conversations (Optional)
+SUPABASE_URL="..."
+SUPABASE_KEY="..."
+```
+
+### 4. Google Authentication
+1.  Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2.  Create a new project.
+3.  Enable the **Google Calendar API**, **Gmail API**, and **People API**.
+4.  Create an "OAuth 2.0 Client ID" credential for a "Web application".
+5.  Under "Authorized redirect URIs", add `http://127.0.0.1:5001/google/callback`.
+6.  Download the JSON credentials file and save it as `credentials.json` in the project's root directory.
+
+---
+
+## How to Run
+
+1.  **Start the Web UI and Process Manager**:
+    ```bash
+    python web_ui.py
+    ```
+    This will start the Flask server. Open your browser to `http://127.0.0.1:5001`.
+
+2.  **Authenticate with Google**:
+    -   Navigate to the "Auth" tab in the web UI.
+    -   Click the "Sign in with Google" button and complete the OAuth flow. A `google_token.json` file will be created.
+
+3.  **Start the Assistant**:
+    -   Click the microphone button in the header of the web UI. This will start the `main.py` assistant process in the background. The button will turn green to indicate it's running.
+
+4.  **Talk to the Assistant**:
+    -   Say the wake word (e.g., "Jarvis").
+    -   After the activation sound, speak your command.
+    -   The assistant will process the command and respond with voice.
+
+You can stop the assistant at any time by clicking the microphone button again.
 
 ---
 
@@ -145,8 +297,8 @@ The application can log all conversations to a Supabase database. The table is n
 | `id`            | `int4`    | Primary key, auto-incrementing.                                             |
 | `platform`      | `text`    | The platform the message originated from. Hardcoded to `"raspberry"`.         |
 | `source_id`     | `text`    | Nullable. Not currently used.                                               |
-| `from_user`     | `text`    | Identifier for the sender (`"user"` or `"aerion"`).                           |
-| `to_user`       | `text`    | Identifier for the recipient (`"aerion"` or `"user"`).                          |
+| `from_user`     | `text`    | Identifier for the sender (`"user"` or `"jarvis"`).                           |
+| `to_user`       | `text`    | Identifier for the recipient (`"jarvis"` or `"user"`).                          |
 | `content`       | `text`    | The text content of the message.                                            |
 | `direction`     | `text`    | `"outbound"` for user -> AI, `"inbound"` for AI -> user.                     |
 | `method`        | `text`    | The method of communication. Hardcoded to `"voice"`.                          |

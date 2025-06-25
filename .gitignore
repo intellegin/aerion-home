@@ -17,4 +17,5 @@ venv/
 
 # Generated files
 *.pyc
-token.json 
+token.json
+client_secret.json 

@@ -66,8 +66,8 @@ def log_message(session_id: int, content: str, direction: str):
             "direction": direction,
             "platform": "raspberry",
             "method": "voice",
-            "from_user": "user" if direction == "outbound" else "aerion",
-            "to_user": "aerion" if direction == "outbound" else "user",
+            "from_user": "user" if direction == "outbound" else "assistant",
+            "to_user": "assistant" if direction == "outbound" else "user",
             "is_handled": True,
             "message_type": "conversation",
         }

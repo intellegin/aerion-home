@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AERION HOME - {% block title %}Dashboard{% endblock %}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: auto; background-color: #f4f4f9; }
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .header-title { display: flex; align-items: center; }
+        .header svg { margin-right: 15px; }
+        .header h1 { color: #333; margin: 0; font-size: 2em; letter-spacing: 1px; }
+        a, a:visited { color: #007BFF; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .auth-display {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+            color: #666;
+            text-align: right;
+        }
+        .auth-display .user-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .auth-display .name {
+            font-weight: bold;
+        }
+        .auth-display .email {
+            font-size: 12px;
+            color: #888;
+        }
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #eee;
+        }
+
+        /* Navigation Links */
+        .nav { border-bottom: 1px solid #ddd; margin-bottom: 20px; padding-bottom: 10px; }
+        .nav a { margin-right: 20px; font-size: 18px; color: #555; border-bottom: 3px solid transparent; padding-bottom: 8px; }
+        .nav a.active { color: #007BFF; border-bottom-color: #007BFF; font-weight: bold; }
+
+        /* Page Content */
+        .content { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+    </style>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-title">
+            <a href="{{ url_for('index') }}" title="Go to Home Control">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#007BFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 17L12 22L22 17" stroke="#007BFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 12L12 17L22 12" stroke="#007BFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+            <h1><a href="{{ url_for('settings') }}">AERION HOME</a></h1>
+        </div>
+        <a href="{{ url_for('auth') }}" class="auth-display">
+            {% if auth_status and auth_status.status == 'authenticated' %}
+                <div class="user-info">
+                    <span class="name">{{ auth_status.name.split()[0] if auth_status.name else (auth_status.email or 'Authenticated') }}</span>
+                    {% if auth_status.email %}
+                        <div class="email">{{ auth_status.email }}</div>
+                    {% endif %}
+                </div>
+                <img src="{{ auth_status.picture if auth_status.picture else url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
+            {% else %}
+                <div class="user-info">
+                     <span class="name">Guest</span>
+                </div>
+                <img src="{{ url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
+            {% endif %}
+        </a>
+    </header>
+    
+    <nav class="nav">
+        <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">Settings</a>
+        <a href="{{ url_for('files') }}" class="{{ 'active' if request.endpoint == 'files' else '' }}">Project Files</a>
+    </nav>
+
+    <div class="content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html> 

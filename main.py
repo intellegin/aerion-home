@@ -15,14 +15,30 @@ Press Ctrl+C to exit.
 from __future__ import annotations
 
 import time
+import json
 import threading
 import uuid
+import argparse
+import socketio
 
 from command_handler import handle_command, SYSTEM_PROMPT, RestartRequest
 from audio_in import capture_and_transcribe, listen_for_speech
 from speak import speak_async, stop_speaking
 from wake_word_listener import listen_for_wake_word
 from database import log_message, create_chat_session
+from socket_client import sio # Import the client from the new module
+
+@sio.event
+def connect():
+    print("Successfully connected to the web UI Socket.IO server.")
+
+@sio.event
+def connect_error(data):
+    print("Failed to connect to the web UI Socket.IO server.")
+
+@sio.event
+def disconnect():
+    print("Disconnected from the web UI Socket.IO server.")
 
 
 def main_loop():
@@ -31,7 +47,7 @@ def main_loop():
     This function is designed to be restartable.
     """
     # 1. Wait for the wake word
-    if not listen_for_wake_word(keyword="jarvis"):
+    if not listen_for_wake_word(keyword="computer"):
         print("Wake word detection failed or was interrupted. Exiting for now.")
         # We return here, and the outer loop will decide whether to restart.
         # This prevents a tight loop if the audio device is disconnected.
@@ -91,8 +107,19 @@ def main_loop():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--socket-port", help="Port for Socket.IO connection", default=5001)
+    args = parser.parse_args()
+
+    try:
+        sio.connect(f'http://127.0.0.1:{args.socket_port}')
+    except socketio.exceptions.ConnectionError as e:
+        print(f"Could not connect to Socket.IO server: {e}")
+
+    # This loop provides crash protection. The script is started/stopped by the web_ui.py process.
     while True:
         try:
+            print("🚀 Assistant process started. Running main loop...")
             main_loop()
         except RestartRequest:
             print("📢 Restarting application as requested by user...")
@@ -106,4 +133,7 @@ if __name__ == "__main__":
             # Log the full traceback for debugging
             import traceback
             traceback.print_exc()
-            time.sleep(5) 
+            time.sleep(5)
+    
+    if sio.connected:
+        sio.disconnect() 

@@ -6,6 +6,7 @@ import pytz
 from duckduckgo_search import DDGS
 from google_calendar import get_all_upcoming_events, get_people_service, get_gmail_service
 from thefuzz import process
+from socket_client import navigate_ui
 
 def get_current_time(timezone: str) -> str:
     """
@@ -93,14 +94,35 @@ def search_contacts(name: str) -> str:
         best_match_person = contacts_dict[best_match_name]
         
         email = best_match_person.get("emailAddresses", [{}])[0].get("value", "N/A")
+        phone = best_match_person.get("phoneNumbers", [{}])[0].get("value", "N/A")
 
         return json.dumps({
             "name": best_match_name,
             "email": email,
+            "phone": phone,
+            "resourceName": best_match_person.get("resourceName")
         })
 
     except Exception as e:
         return f"An error occurred searching contacts: {e}"
+
+def get_my_profile() -> str:
+    """
+    Fetches the user's own Google profile information (name and email).
+    """
+    service = get_people_service()
+    if not service:
+        return "Could not connect to Google People API."
+    try:
+        profile = service.people().get(
+            resourceName='people/me',
+            personFields='names,emailAddresses'
+        ).execute()
+        name = profile.get('names', [{}])[0].get('displayName', 'N/A')
+        email = profile.get('emailAddresses', [{}])[0].get('value', 'N/A')
+        return json.dumps({"name": name, "email": email})
+    except Exception as e:
+        return f"An error occurred while fetching your profile: {e}"
 
 def create_email_draft(contact_name: str, subject: str, body: str) -> str:
     """
@@ -127,10 +149,13 @@ def create_email_draft(contact_name: str, subject: str, body: str) -> str:
     except Exception as e:
         return f"An unexpected error occurred while preparing the draft: {e}"
 
+    # Add signature to the body for the user to see in the draft
+    signed_body = f"{body}\n\n--\nSheldon"
+
     draft = {
         "to": recipient_email,
         "subject": subject,
-        "body": body,
+        "body": signed_body,
     }
     print(f"Draft created for {recipient_name} ({recipient_email}).")
     return json.dumps(draft)
@@ -144,6 +169,11 @@ def send_email(to: str, subject: str, body: str) -> str:
         return "Could not connect to Gmail API."
 
     try:
+        signature = "\n\n--\nSheldon"
+        # Add signature if it's not already there to prevent duplicates
+        if not body.rstrip().endswith("--\nSheldon"):
+            body += signature
+        
         message = MIMEText(body)
         message["to"] = to
         message["subject"] = subject
@@ -169,6 +199,11 @@ def save_email_draft(to: str, subject: str, body: str) -> str:
         return "Could not connect to Gmail API."
 
     try:
+        signature = "\n\n--\nSheldon"
+        # Add signature if it's not already there to prevent duplicates
+        if not body.rstrip().endswith("--\nSheldon"):
+            body += signature
+
         message = MIMEText(body)
         message["to"] = to
         message["subject"] = subject
@@ -193,6 +228,8 @@ available_functions = {
     "send_email": send_email,
     "create_email_draft": create_email_draft,
     "save_email_draft": save_email_draft,
+    "get_my_profile": get_my_profile,
+    "navigate_ui": navigate_ui,
 }
 
 # This is a list of tool definitions that we will pass to the OpenAI API.
@@ -263,6 +300,18 @@ tools = [
                     }
                 },
                 "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_my_profile",
+            "description": "Get the user's own profile information, such as their name and email address.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         },
     },
@@ -340,5 +389,23 @@ tools = [
                 "required": ["to", "subject", "body"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "navigate_ui",
+            "description": "Navigate the web UI to a specific tab.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tab_name": {
+                        "type": "string",
+                        "description": "The name of the tab to navigate to. Must be one of: 'files', 'settings', 'auth'.",
+                        "enum": ["files", "settings", "auth"]
+                    }
+                },
+                "required": ["tab_name"],
+            },
+        },
+    },
 ] 

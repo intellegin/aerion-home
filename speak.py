@@ -17,6 +17,7 @@ import subprocess
 import sys
 import os
 import io
+import json
 from typing import NoReturn, Optional
 import threading
 
@@ -48,9 +49,21 @@ DEFAULT_VOICE = "4YYIPFl9wE5c4L2eu2Gb"
 _OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
 
 
+def _get_current_settings():
+    """Reads settings from the settings file, returns empty dict if not found."""
+    try:
+        with open('settings.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
 def _current_voice() -> str:
-    """Return the desired voice name, falling back to DEFAULT_VOICE."""
-    return os.getenv("VOICE_NAME", DEFAULT_VOICE)
+    """
+    Return the desired voice name, checking settings and environment variables.
+    Priority: 1. Settings File, 2. Environment Var, 3. Hardcoded Default
+    """
+    settings = _get_current_settings()
+    return settings.get("voice_id") or os.getenv("VOICE_NAME") or DEFAULT_VOICE
 
 
 def stop_speaking() -> None:
@@ -329,4 +342,21 @@ def speak_sync(text: str) -> None:
         return
 
     print("(TTS unavailable — install pyttsx3, or 'say'/'espeak'.)")
+
+
+def get_elevenlabs_voices():
+    """Returns a list of available ElevenLabs voices."""
+    api_key = os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        print("Warning: ELEVEN_API_KEY not set. Cannot fetch voices.")
+        return []
+    try:
+        from elevenlabs.client import ElevenLabs
+        client = ElevenLabs(api_key=api_key)
+        voices = client.voices.get_all().voices
+        # Format for display: [{"id": "...", "name": "..."}]
+        return [{"id": v.voice_id, "name": v.name} for v in voices]
+    except Exception as e:
+        print(f"Could not fetch ElevenLabs voices: {e}")
+        return []
 

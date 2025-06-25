@@ -2,16 +2,16 @@ import datetime
 import os.path
 import json
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google_auth import get_credentials # Use the new auth module
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
+    "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/gmail.modify",
 ]
 
@@ -19,23 +19,14 @@ SCOPES = [
 def get_google_service(service_name: str, version: str):
     """
     Generic function to authenticate with a Google API and return a service object.
-    Handles the OAuth 2.0 flow and token management.
+    It now uses the centralized get_credentials function.
     """
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    creds = get_credentials()
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists("credentials.json"):
-                raise FileNotFoundError(
-                    "credentials.json not found. Please follow the setup instructions."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+        # The new flow requires the user to authenticate via the web UI.
+        # This function will now fail if credentials are not present or invalid.
+        print(f"Google API authentication required for {service_name}. Please authenticate via the web UI.")
+        return None
     
     try:
         service = build(service_name, version, credentials=creds)

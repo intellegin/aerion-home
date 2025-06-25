@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AERION HOME - Assistant Control</title>
+    <style>
+        /* Basic styles */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            background-color: #f4f4f9; 
+        }
+        .settings-link {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #aaa;
+            transition: color 0.3s;
+        }
+        .settings-link:hover {
+            color: #333;
+        }
+        .settings-link svg {
+            width: 28px;
+            height: 28px;
+        }
+        .controls { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            gap: 20px; 
+        }
+        .voice-display { 
+            font-size: 16px; 
+            color: #555; 
+            font-style: italic; 
+            height: 20px; /* Reserve space to prevent layout shift */
+        }
+
+        /* Large Toggle Button Styles */
+        .controls #toggle-btn { 
+            background-color: #f0f0f0; 
+            border: 2px solid #ccc;
+            border-radius: 50%; 
+            width: 100px; /* Larger button */
+            height: 100px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .controls #toggle-btn svg {
+            width: 48px; /* Larger icon */
+            height: 48px;
+            stroke: #555;
+            transition: stroke 0.3s;
+        }
+        .controls #toggle-btn.running {
+            background-color: #e6ffed;
+            border-color: #28a745;
+        }
+        .controls #toggle-btn.running svg {
+            stroke: #28a745;
+        }
+        .controls #toggle-btn.stopped {
+            background-color: #ffeeee;
+            border-color: #dc3545;
+        }
+        .controls #toggle-btn.stopped svg {
+            stroke: #dc3545;
+        }
+    </style>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <a href="{{ url_for('settings') }}" class="settings-link" title="Go to Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </a>
+    <div class="controls">
+        <button id="toggle-btn" title="Toggle Assistant Status">
+            <svg id="mic-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+        </button>
+        <span id="current-voice-display" class="voice-display"></span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleBtn = document.getElementById('toggle-btn');
+            const voiceDisplay = document.getElementById('current-voice-display');
+            let currentState = 'stopped';
+
+            // Socket.IO connection
+            const socket = io();
+            socket.on('connect', () => {
+                console.log('Connected to Socket.IO server!');
+            });
+            
+            socket.on('status_update', (data) => {
+                console.log('Status update received:', data);
+                updateStatus(data);
+            });
+
+            // Assistant status and control
+            function updateStatus(data) {
+                currentState = data.status;
+                if (currentState === 'running') {
+                    toggleBtn.classList.add('running');
+                    toggleBtn.classList.remove('stopped');
+                    toggleBtn.title = 'Assistant is Running (Click to Stop)';
+                } else {
+                    toggleBtn.classList.add('stopped');
+                    toggleBtn.classList.remove('running');
+                    toggleBtn.title = 'Assistant is Stopped (Click to Start)';
+                }
+
+                // Update voice display
+                if (voiceDisplay && data.voice_name) {
+                    if (data.status === 'running' && data.voice_name !== 'Unknown' && data.voice_name !== 'Default') {
+                        voiceDisplay.textContent = 'Using voice: ' + data.voice_name;
+                    } else {
+                        voiceDisplay.textContent = ''; // Clear if stopped or unknown
+                    }
+                }
+            }
+
+            toggleBtn.addEventListener('click', function() {
+                const endpoint = currentState === 'running' ? '/stop' : '/start';
+                fetch(endpoint, { method: 'POST' });
+            });
+
+            // The initial status is sent by the server on connect.
+        });
+    </script>
+</body>
+</html> 

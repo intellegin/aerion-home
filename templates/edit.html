@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block title %}Edit {{ filename }}{% endblock %}
+
+{% block content %}
+<style>
+    .editor-form {
+        display: flex;
+        flex-direction: column;
+    }
+    .editor-textarea {
+        width: 100%;
+        min-height: 60vh;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        background-color: #f9f9f9;
+        margin-bottom: 15px;
+    }
+    .save-btn {
+        align-self: flex-end;
+        background-color: #007BFF;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+    }
+    .save-btn:hover {
+        background-color: #0056b3;
+    }
+</style>
+
+<h2>Editing: {{ filename }}</h2>
+<form action="{{ url_for('save_file', filename=filename) }}" method="post" class="editor-form">
+    <textarea name="content" class="editor-textarea">{{ content }}</textarea>
+    <button type="submit" class="save-btn">Save Changes</button>
+</form>
+{% endblock %} 
