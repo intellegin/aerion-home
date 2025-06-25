@@ -74,7 +74,7 @@ def stop_speaking() -> None:
         _process = None
 
 
-def _speak_pyttsx3_async(text: str) -> bool:
+def _speak_pyttsx3_async(text: str) -> threading.Thread | None:
     """Speak via pyttsx3 in a background thread."""
     try:
         import pyttsx3  # type: ignore
@@ -93,10 +93,12 @@ def _speak_pyttsx3_async(text: str) -> bool:
                         break
             eng.say(text)
             eng.runAndWait()
-        threading.Thread(target=_worker, daemon=True).start()
-        return True
+        
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        return thread
     except Exception:
-        return False
+        return None
 
 
 def _speak_with_command_async(cmd: list[str], *, add_voice: bool = False) -> bool:
@@ -210,11 +212,11 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
         return False
 
 
-def _speak_eleven_async(text: str) -> bool:
+def _speak_eleven_async(text: str) -> threading.Thread | None:
     """Speak using ElevenLabs in a background thread (non-blocking)."""
     # Quick check for API key before starting thread.
     if not (os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")):
-        return False
+        return None
 
     # Check for either old or new SDK
     try:
@@ -224,45 +226,56 @@ def _speak_eleven_async(text: str) -> bool:
         sdk_v2_present = False
     
     if _eleven_generate is None and not sdk_v2_present:
-        return False
+        return None
 
     def _worker():
         """Worker thread to call the synchronous speak method."""
         _speak_eleven_sync(text, _current_voice())
 
-    threading.Thread(target=_worker, daemon=True).start()
-    return True
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    return thread
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def speak_async(text: str) -> None:
-    """Speak *text* without blocking; call `stop_speaking()` to interrupt."""
-
+def speak_async(text: str) -> threading.Thread | None:
+    """
+    Speak *text* without blocking and return the thread.
+    Call `stop_speaking()` to interrupt.
+    """
     # First stop anything that might still be playing
     stop_speaking()
 
     # Prefer ElevenLabs if available
-    if _speak_eleven_async(text):
-        return
+    if (thread := _speak_eleven_async(text)):
+        return thread
 
-    if sys.platform.startswith("darwin"):
-        # Prefer the native voice on macOS because it is reliable.
+    # Fallback to OpenAI
+    if OpenAI is not None:
+        def _worker():
+            _speak_openai_sync(text, _current_voice())
+        
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        return thread
+
+    # Fallback to system commands
+    if sys.platform == "darwin":
         if _speak_with_command_async(["say", text], add_voice=True):
-            return
-        # Fallback to pyttsx3 if 'say' is unavailable
-        if _speak_pyttsx3_async(text):
-            return
-    else:
-        # Linux / Windows: try pyttsx3 first, then espeak
-        if _speak_pyttsx3_async(text):
-            return
-        if _speak_with_command_async(["espeak", text], add_voice=False):
-            return
+            return None  # Cannot return thread for subprocess
+    elif sys.platform.startswith("linux"):
+        if _speak_with_command_async(["espeak", text], add_voice=True):
+            return None # Cannot return thread for subprocess
 
-    print("(TTS unavailable — install pyttsx3, or 'say'/'espeak'.)")
+    # Final fallback to pyttsx3
+    if (thread := _speak_pyttsx3_async(text)):
+        return thread
+
+    print("Warning: No TTS engine available.")
+    return None
 
 
 # Backward-compat name kept

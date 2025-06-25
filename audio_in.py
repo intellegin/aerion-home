@@ -68,6 +68,37 @@ def _rms(block: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(block))))
 
 
+def listen_for_speech(timeout: float) -> bool:
+    """
+    Listens to the microphone for a short period to detect any voice activity.
+
+    :param timeout: How long to listen in seconds.
+    :return: True if speech is detected, False otherwise.
+    """
+    vad = webrtcvad.Vad(int(os.getenv("VAD_AGGRESSIVENESS", DEFAULT_VAD_AGGRESSIVENESS)))
+    rms_threshold = float(os.getenv("VAD_RMS_THRESHOLD", DEFAULT_RMS_THRESHOLD))
+    fs = DEFAULT_FS
+    frame_duration_ms = 30
+    frame_length = int(fs * frame_duration_ms / 1000)
+    
+    start_time = time.time()
+    
+    try:
+        with sd.InputStream(samplerate=fs, channels=DEFAULT_CHANNELS, dtype="int16", blocksize=frame_length) as stream:
+            while time.time() - start_time < timeout:
+                block, _ = stream.read(frame_length)
+                block_float = block.astype(np.float32) / 32768.0
+                
+                if _rms(block_float) >= rms_threshold:
+                    pcm_bytes = block.tobytes()
+                    if vad.is_speech(pcm_bytes, fs):
+                        return True
+        return False
+    except Exception as e:
+        print(f"Error while listening for speech: {e}")
+        return False
+
+
 def capture_audio_stream(
     max_seconds: float = 10.0,
     fs: int = DEFAULT_FS,

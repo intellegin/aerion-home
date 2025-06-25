@@ -13,4 +13,8 @@ venv/
 .idea/
 
 # MacOS
-.DS_Store 
+.DS_Store
+
+# Generated files
+*.pyc
+token.json 
