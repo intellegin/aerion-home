@@ -60,11 +60,7 @@ DEFAULT_RMS_THRESHOLD = 0.02
 # Set via `VAD_AGGRESSIVENESS` env var.
 DEFAULT_VAD_AGGRESSIVENESS = 2
 
-DEFAULT_PROMPT = (
-    "The speaker is issuing informal English commands to an AI companion. "
-    "Avoid interpreting short utterances as abbreviations like FEMA. "
-    "Common words include 'yeah', 'bro', 'dude', 'hello'. Respond with the exact transcription, no additional text."
-)
+DEFAULT_PROMPT = "The following is a transcription of a user speaking to a home assistant."
 
 
 def _rms(block: np.ndarray) -> float:
