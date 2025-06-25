@@ -1,12 +1,27 @@
-# Python artifacts
-__pycache__/
-*.py[cod]
-*.egg-info/
-*.egg
-
-# Virtual environments
-venv/
+# Environment variables
 .env
+
+# Google Cloud credentials
+credentials.json
+token.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+env/
+venv.bak/
+.env/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
 
 # IDE files
 .vscode/
