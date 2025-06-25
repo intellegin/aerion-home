@@ -153,6 +153,34 @@ def _speak_openai_sync(text: str, voice: str) -> bool:
 def _speak_eleven_sync(text: str, voice: str) -> bool:
     """Use ElevenLabs TTS if API key and library are available. Returns True on success."""
 
+    if _eleven_generate is None and _eleven_play is None:
+        # Try newer v2+ SDK programmatic path
+        try:
+            from elevenlabs.client import ElevenLabs  # type: ignore
+        except Exception:
+            return False
+
+        api_key = os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")
+        if not api_key:
+            return False
+
+        try:
+            client = ElevenLabs(api_key=api_key)  # type: ignore[arg-type]
+            # choose reasonable defaults
+            audio = client.text_to_speech.convert(
+                text=text,
+                voice_id=voice,
+                model_id="eleven_multilingual_v2",
+                output_format="wav",
+            )
+            from elevenlabs import play as _new_play  # type: ignore
+            _new_play(audio)  # type: ignore[arg-type]
+            return True
+        except Exception as exc:  # pragma: no cover
+            print(f"[ElevenLabs v2 TTS error] {exc}")
+            return False
+
+    # Legacy SDK path (v0.x – v1.x)
     if _eleven_generate is None:
         return False
 
@@ -162,12 +190,11 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
 
     try:
         _eleven_set_api_key(api_key)  # type: ignore[arg-type]
-        # elevenlabs SDK returns raw audio bytes (mp3). `play` handles playback via simpleaudio.
         audio_data = _eleven_generate(text=text, voice=voice)  # type: ignore[arg-type]
         _eleven_play(audio_data)  # type: ignore[arg-type]
         return True
     except Exception as exc:  # pragma: no cover
-        print(f"[ElevenLabs TTS error] {exc}")
+        print(f"[ElevenLabs legacy TTS error] {exc}")
         return False
 
 
