@@ -61,7 +61,7 @@ _RULES: Dict[str, str] = {
 }
 
 
-def handle_command(text: str) -> str:
+def get_llm_response_or_execute_command(text: str) -> str:
     text_lower = text.lower()
 
     for key, reply in _RULES.items():
