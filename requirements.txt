@@ -21,4 +21,7 @@ Flask-SocketIO
 python-socketio[client]
 eventlet
 google-api-python-client==2.130.0
-SpeechRecognition==3.10.3 
+SpeechRecognition==3.10.3
+twilio
+notion-client==2.2.0
+pyngrok==7.1.6 

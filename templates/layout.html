@@ -64,14 +64,14 @@
             <h1><a href="{{ url_for('index') }}">AERION</a></h1>
         </div>
         <a href="{{ url_for('auth') }}" class="auth-display">
-            {% if auth_status and auth_status.status == 'authenticated' %}
+            {% if google_auth_status and google_auth_status.status == 'authenticated' %}
                 <div class="user-info">
-                    <span class="name">{{ auth_status.name.split()[0] if auth_status.name else (auth_status.email or 'Authenticated') }}</span>
-                    {% if auth_status.email %}
-                        <div class="email">{{ auth_status.email }}</div>
+                    <span class="name">{{ google_auth_status.name.split()[0] if google_auth_status.name else (google_auth_status.email or 'Authenticated') }}</span>
+                    {% if google_auth_status.email %}
+                        <div class="email">{{ google_auth_status.email }}</div>
                     {% endif %}
                 </div>
-                <img src="{{ auth_status.picture if auth_status.picture else url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
+                <img src="{{ google_auth_status.picture if google_auth_status.picture else url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
             {% else %}
                 <div class="user-info">
                      <span class="name">Guest</span>

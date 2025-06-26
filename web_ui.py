@@ -5,15 +5,19 @@ import atexit
 import json
 import time
 import threading
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from speak import get_elevenlabs_voices, DEFAULT_VOICE # Import the new function
 import google_auth as google_auth_helper # Import the new auth module
+import notion_auth as notion_auth_helper # Import the new Notion auth module
 import sounddevice as sd # Import the sounddevice library
 from tools import tools, _load_tools # Import the loader
 from audio_in import Transcriber # Corrected import path
 from command_handler import handle_command, conversation_history, SYSTEM_PROMPT
+
+load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
 CORS(app)
@@ -33,7 +37,10 @@ main_process = None
 @app.context_processor
 def inject_auth_status():
     """Injects Google auth status into all templates."""
-    return dict(auth_status=google_auth_helper.get_auth_status())
+    return dict(
+        google_auth_status=google_auth_helper.get_auth_status(),
+        notion_auth_status=notion_auth_helper.get_auth_status()
+    )
 
 # Cache for voices to avoid excessive API calls
 _voice_cache = None
@@ -313,8 +320,8 @@ def start_assistant_process():
 def cleanup_assistant_process():
     """Ensure the assistant process is terminated when the web UI exits."""
     global main_process
-    if main_process and main_process.poll() is None:
-        print("Web UI is shutting down, terminating assistant process...")
+    if main_process:
+        print("Terminating assistant process...")
         main_process.terminate()
         main_process.wait()
 
@@ -348,8 +355,46 @@ def google_status():
 @app.route('/api/google/logout', methods=['POST'])
 def google_logout():
     """Logs the user out by deleting their token."""
-    success = google_auth_helper.revoke_auth()
-    return jsonify({'status': 'success' if success else 'failure'})
+    google_auth_helper.revoke_access()
+    return jsonify({"status": "success", "message": "Logged out successfully."})
+
+# --- Notion Auth Routes ---
+
+@app.route('/notion/auth')
+def notion_auth():
+    """Redirects the user to Notion's authorization page."""
+    try:
+        url = notion_auth_helper.get_auth_url()
+        return redirect(url)
+    except ValueError as e:
+        flash(str(e), 'error')
+        return redirect(url_for('settings'))
+
+@app.route('/notion/callback')
+def notion_callback():
+    """Handles the callback from Notion after authorization."""
+    code = request.args.get('code')
+    if not code:
+        flash('Authorization failed. No code provided.', 'error')
+        return redirect(url_for('settings'))
+    
+    if notion_auth_helper.handle_callback(code):
+        flash('Successfully connected to Notion!', 'success')
+    else:
+        flash('Failed to connect to Notion. Check logs for details.', 'error')
+    
+    return redirect(url_for('settings'))
+
+@app.route('/api/notion/status')
+def notion_status():
+    """API endpoint to get the current Notion auth status."""
+    return jsonify(notion_auth_helper.get_auth_status())
+
+@app.route('/api/notion/logout', methods=['POST'])
+def notion_logout():
+    """Disconnects from Notion by deleting the local token."""
+    notion_auth_helper.revoke_access()
+    return jsonify({"status": "success", "message": "Disconnected from Notion."})
 
 def run_assistant_process():
     """Starts the assistant process in a separate thread."""
@@ -363,6 +408,22 @@ def run_assistant_process():
 
 def main():
     """Starts the Flask web UI and the assistant process."""
+    # Start ngrok tunnel only in the main process, not the reloader's child process
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        from pyngrok import ngrok
+        # Disconnect any existing tunnels
+        for t in ngrok.get_tunnels():
+            ngrok.disconnect(t.public_url)
+        
+        # Set up a secure tunnel using ngrok
+        port = 5001
+        public_url = ngrok.connect(port).public_url
+        os.environ['FLASK_BASE_URL'] = public_url
+        print("------------------------------------------------------------------")
+        print(f"✅ Your secure public URL is: {public_url}")
+        print(f"👉 Use this for your Notion Redirect URI: {public_url}/notion/callback")
+        print("------------------------------------------------------------------")
+
     # Watch for changes in the main script and the tools directory
     extra_files = [
         os.path.join(os.path.dirname(__file__), 'command_handler.py'),
@@ -370,7 +431,8 @@ def main():
     ]
     
     # Start the Flask app with the reloader
-    socketio.run(app, host="127.0.0.1", port=5001, debug=True, allow_unsafe_werkzeug=True, extra_files=extra_files)
+    port = 5001
+    socketio.run(app, host="127.0.0.1", port=port, debug=True, allow_unsafe_werkzeug=True, extra_files=extra_files)
 
 if __name__ == "__main__":
     main() 

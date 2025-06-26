@@ -1,7 +1,6 @@
 {
     "wake_word": "computer",
-    "timezone": "",
-    "mic_device_id": "2",
-    "speaker_device_id": "4",
+    "mic_device_id": "1",
+    "speaker_device_id": "2",
     "voice_id": "4YYIPFl9wE5c4L2eu2Gb"
 }

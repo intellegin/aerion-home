@@ -124,8 +124,8 @@
     </a>
     <div class="controls">
         <h1 id="greeting" style="font-weight: 500; margin-bottom: 10px; color: #333;">
-            {% if auth_status.status == 'authenticated' and auth_status.name %}
-                Hi, {{ auth_status.name.split(' ')[0] }}!
+            {% if google_auth_status.status == 'authenticated' and google_auth_status.name %}
+                Hi, {{ google_auth_status.name.split(' ')[0] }}!
             {% else %}
                 Hello!
             {% endif %}
