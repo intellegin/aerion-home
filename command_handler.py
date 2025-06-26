@@ -17,6 +17,9 @@ from speak import speak_sync
 from datetime import datetime
 from config import OPENAI_API_KEY
 from tools import tools, available_functions
+from tzlocal import get_localzone_name
+from zoneinfo import ZoneInfoNotFoundError, ZoneInfo
+import importlib
 
 
 class RestartRequest(Exception):
@@ -25,11 +28,18 @@ class RestartRequest(Exception):
 
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+conversation_history = []
+is_speaking = False
+is_listening = False
+assistant_state = "idle" # idle, listening, processing, speaking, waiting_for_response
 
 
-SYSTEM_PROMPT = {
-    "role": "system",
-    "content": (
+def get_system_prompt() -> Dict[str, str]:
+    """
+    Creates the system prompt, injecting the user's configured timezone if available.
+    """
+    # Base prompt content
+    content = (
         "You are a home AI assistant. "
         "Your communication style is brutally direct and efficient. No fluff, no pleasantries. "
         "Get straight to the point and deliver the information or answer as concisely as humanly possible. "
@@ -37,6 +47,10 @@ SYSTEM_PROMPT = {
         "you must use the `get_all_upcoming_events` tool to get a consolidated list from all their calendars. "
         
         "You can search Google Contacts and get your own profile information. You do not have permission to create, update, or delete contacts."
+
+        "TOOL CREATION: You have the ability to create new tools for yourself. When a user asks for a capability you don't have, you must use the `create_new_tool` function. You will need to provide three arguments: `tool_name` (a lowercase, snake_case string), `tool_code` (the full Python code for the 'run' function, including imports), and `tool_definition_json` (the JSON definition for the tool). For example, to create a tool to get the weather, you would call `create_new_tool` with `tool_name='get_weather'`, `tool_code='import requests\\n\\ndef run(city: str):\\n    # ...code to get weather...'`, and a complete `tool_definition_json` string. After creating a tool, inform the user that it will be available after a reload."
+
+        "CONFIDENTIALITY: When you use tools that return personal information like phone numbers or email addresses (from `search_contacts` or `get_my_profile`), you MUST NOT include this information in your response. Simply confirm you found the contact (e.g., 'Found him.' or 'I found a contact for John Smith.'). Only provide specific details if the user explicitly asks for them (e.g., 'what is his phone number?'). The only exception is for disambiguation; if you find multiple contacts for the same name, you may use minimal information (like an email) to ask for clarification."
 
         "You can also control the web interface. Use the `navigate_ui` tool to switch between the 'files', 'settings', and 'auth' tabs when the user asks."
 
@@ -50,7 +64,53 @@ SYSTEM_PROMPT = {
         "Don't explain your steps. Just execute the workflow. "
         "Profanity is not just allowed, it's encouraged. Use it for emphasis and color. Be direct, be blunt, and don't waste time."
     )
-}
+
+    # Try to read the timezone from settings.json, fallback to auto-detect
+    user_timezone = None
+    try:
+        with open('settings.json', 'r') as f:
+            settings = json.load(f)
+        user_timezone = settings.get("timezone")
+        if user_timezone:
+            print(f"Using timezone from settings: {user_timezone}")
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass  # File doesn't exist or is empty, will try auto-detect
+
+    if not user_timezone:
+        try:
+            user_timezone = get_localzone_name()
+            print(f"Auto-detected system timezone: {user_timezone}")
+        except ZoneInfoNotFoundError:
+            print("Warning: Could not auto-detect timezone. Please set it manually in settings.")
+
+    if user_timezone:
+        content += f" The user's timezone is {user_timezone}. All date and time related queries should be interpreted and responded to in this timezone."
+        print(f"System prompt updated with timezone: {user_timezone}")
+
+
+    return {"role": "system", "content": content}
+
+SYSTEM_PROMPT = get_system_prompt()
+
+
+def _get_user_timezone() -> str | None:
+    """
+    Reads the user's configured timezone from settings.json,
+    falling back to auto-detection if not present.
+    """
+    try:
+        with open('settings.json', 'r') as f:
+            settings = json.load(f)
+        configured_timezone = settings.get("timezone")
+        if configured_timezone:
+            return configured_timezone
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass  # Fallback to auto-detect
+
+    try:
+        return get_localzone_name()
+    except ZoneInfoNotFoundError:
+        return None
 
 def _ask_llm(messages: List[Dict[str, str]]):
     """
@@ -79,11 +139,13 @@ def _ask_llm(messages: List[Dict[str, str]]):
                 function_to_call = available_functions[function_name]
                 function_args = json.loads(tool_call.function.arguments)
                 
-                # Special handling for get_current_time to default to a local timezone
+                # If the function is get_current_time and no timezone is specified,
+                # use the one from the user's settings.
                 if function_name == "get_current_time" and not function_args.get("timezone"):
-                    # TODO: Make this configurable or auto-detect from user's location
-                    function_args["timezone"] = "America/Los_Angeles" 
-                    print(f"Defaulting timezone to {function_args['timezone']}")
+                    user_timezone = _get_user_timezone()
+                    if user_timezone:
+                        function_args["timezone"] = user_timezone
+                        print(f"Using configured timezone for get_current_time: {user_timezone}")
 
                 function_response = function_to_call(**function_args)
                 

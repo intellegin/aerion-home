@@ -3,90 +3,315 @@
 
 {% block content %}
 <style>
-    #settings-form h3 { margin-top: 0; }
-    #voice-list-container label { display: block; margin-bottom: 10px; cursor: pointer; }
+    .settings-section {
+        margin-bottom: 40px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    #settings-form h3, #mic-settings-form h3, #speaker-settings-form h3, #wakeword-settings-form h3 { margin-top: 0; }
     .save-btn { background-color: #007BFF; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 15px; }
     .save-btn:hover { background-color: #0056b3; }
     .voice-source-desc { font-size: 14px; color: #6c757d; margin-top: -5px; margin-bottom: 15px; }
     .voice-source-desc a { color: #007BFF; }
+    #mic-select, #speaker-select { padding: 8px; border-radius: 5px; border: 1px solid #ccc; min-width: 300px; }
+    #wake-word-input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; }
+    
+    #voice-search-input {
+        width: calc(100% - 22px);
+        padding: 10px;
+        margin-bottom: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }
+    #voice-list-container {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 5px;
+    }
+    .voice-option {
+        padding: 10px;
+        cursor: pointer;
+        border-radius: 3px;
+    }
+    .voice-option:hover {
+        background-color: #f0f0f0;
+    }
+    .voice-option.selected {
+        background-color: #007BFF;
+        color: white;
+    }
+    .voice-select-container {
+        position: relative;
+        width: 350px;
+    }
+    #voice-list-container {
+        display: none; /* Hide by default */
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 10;
+        background-color: white;
+    }
 </style>
 
-<form id="settings-form">
-    <h3>Text-to-Speech Voice</h3>
-    <p class="voice-source-desc">
-        Voices are provided by <a href="https://elevenlabs.io/" target="_blank">ElevenLabs</a>.
-    </p>
-    <p>Select a voice for the assistant. Changes will apply after restarting the assistant.</p>
-    <div id="voice-list-container">
-        <p>Loading voices...</p>
+<form id="main-settings-form">
+    <div class="settings-section">
+        <h3>Wake Word</h3>
+        <p>Set the wake word for the assistant. This requires a restart.</p>
+        <select id="wake-word-select" name="wake_word" class="form-control" style="padding: 8px; border-radius: 5px; border: 1px solid #ccc; min-width: 300px;">
+            <option value="alexa">Alexa</option>
+            <option value="americano">Americano</option>
+            <option value="blueberry">Blueberry</option>
+            <option value="bumblebee">Bumblebee</option>
+            <option value="computer">Computer</option>
+            <option value="grapefruit">Grapefruit</option>
+            <option value="grasshopper">Grasshopper</option>
+            <option value="hey google">Hey Google</option>
+            <option value="hey siri">Hey Siri</option>
+            <option value="jarvis">Jarvis</option>
+            <option value="okay google">Okay Google</option>
+            <option value="picovoice">Picovoice</option>
+            <option value="porcupine">Porcupine</option>
+            <option value="terminator">Terminator</option>
+        </select>
     </div>
-    <button type="submit" class="save-btn">Save Settings</button>
+
+    <div class="settings-section">
+        <h3>Timezone</h3>
+        <p>Set your timezone (e.g., "America/New_York", "Europe/London"). This helps the assistant provide accurate time-based information. Find your timezone <a href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones" target="_blank">here</a>.</p>
+        <input type="text" id="timezone-input" name="timezone" class="form-control" placeholder="Enter IANA timezone" style="padding: 8px; border-radius: 5px; border: 1px solid #ccc; min-width: 300px;">
+    </div>
+
+    <div class="settings-section">
+        <h3>Audio Input</h3>
+        <p>Select the microphone to use for voice input. Changes will apply after restarting the assistant.</p>
+        <select id="mic-select" name="mic_device_id">
+            <option value="">Loading microphones...</option>
+        </select>
+    </div>
+
+    <div class="settings-section">
+        <h3>Audio Output</h3>
+        <p>Select the speaker to use for voice output. Changes will apply after restarting the assistant.</p>
+        <select id="speaker-select" name="speaker_device_id">
+            <option value="">Loading speakers...</option>
+        </select>
+    </div>
+
+    <div class="settings-section">
+        <h3>Text-to-Speech Voice</h3>
+        <p class="voice-source-desc">
+            Voices are provided by <a href="https://elevenlabs.io/" target="_blank">ElevenLabs</a>.
+        </p>
+        <p>Select a voice for the assistant. Changes will apply after restarting the assistant.</p>
+        <div class="voice-select-container">
+            <input type="text" id="voice-search-input" placeholder="Search for a voice..." autocomplete="off">
+            <div id="voice-list-container">
+                <p>Loading voices...</p>
+            </div>
+        </div>
+        <input type="hidden" id="selected-voice-id" name="voice_id">
+    </div>
+    
+    <button type="submit" class="save-btn">Save All Settings</button>
 </form>
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const mainSettingsForm = document.getElementById('main-settings-form');
     const voiceListContainer = document.getElementById('voice-list-container');
-    const settingsForm = document.getElementById('settings-form');
+    const micSelect = document.getElementById('mic-select');
+    const speakerSelect = document.getElementById('speaker-select');
+    const wakeWordSelect = document.getElementById('wake-word-select');
+    const timezoneInput = document.getElementById('timezone-input');
+    const voiceSearchInput = document.getElementById('voice-search-input');
+    const selectedVoiceIdInput = document.getElementById('selected-voice-id');
     let currentSettings = {};
 
-    function loadSettingsAndVoices() {
-        const settingsPromise = fetch('/api/settings').then(res => res.json());
-        const voicesPromise = fetch('/api/voices').then(res => res.json());
-
-        Promise.all([settingsPromise, voicesPromise]).then(([settings, voices]) => {
+    function loadSettings() {
+        return fetch('/api/settings').then(res => res.json()).then(settings => {
             currentSettings = settings;
-            voiceListContainer.innerHTML = ''; // Clear loading message
+            return settings;
+        });
+    }
 
-            if (voices && voices.length > 0) {
-                voices.forEach(voice => {
-                    const label = document.createElement('label');
-                    const radio = document.createElement('input');
-                    radio.type = 'radio';
-                    radio.name = 'voice_id';
-                    radio.value = voice.id;
-                    if (voice.id === settings.voice_id) {
-                        radio.checked = true;
-                    }
-                    
-                    label.appendChild(radio);
-                    label.appendChild(document.createTextNode(` ${voice.name}`));
-                    voiceListContainer.appendChild(label);
-                });
-            } else {
-                voiceListContainer.innerHTML = '<p>Could not load voices. Is the ELEVEN_API_KEY set?</p>';
+    function loadAndPopulateAll() {
+        loadSettings().then(settings => {
+            // Populate Wake Word
+            wakeWordSelect.value = settings.wake_word || 'jarvis';
+            
+            // Populate Timezone - use setting value, but have a placeholder for auto-detect
+            timezoneInput.value = settings.timezone || '';
+            try {
+                const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                if (browserTimezone) {
+                    timezoneInput.placeholder = `Auto-detected: ${browserTimezone}`;
+                }
+            } catch (e) {
+                console.warn("Could not detect browser timezone.", e);
+                timezoneInput.placeholder = 'Enter IANA timezone';
             }
+
+            // Populate Microphones
+            fetch('/api/microphones').then(res => res.json()).then(mics => {
+                micSelect.innerHTML = '';
+                if (mics && !mics.error && mics.length > 0) {
+                    mics.forEach(mic => {
+                        const option = document.createElement('option');
+                        option.value = mic.id;
+                        option.textContent = mic.name;
+                        if (mic.id === parseInt(settings.mic_device_id, 10)) {
+                            option.selected = true;
+                        }
+                        micSelect.appendChild(option);
+                    });
+                } else {
+                    micSelect.innerHTML = '<option value="">Could not load microphones</option>';
+                }
+            });
+
+            // Populate Speakers
+            fetch('/api/speakers').then(res => res.json()).then(speakers => {
+                speakerSelect.innerHTML = '';
+                if (speakers && !speakers.error && speakers.length > 0) {
+                    speakers.forEach(speaker => {
+                        const option = document.createElement('option');
+                        option.value = speaker.id;
+                        option.textContent = speaker.name;
+                        if (speaker.id === parseInt(settings.speaker_device_id, 10)) {
+                            option.selected = true;
+                        }
+                        speakerSelect.appendChild(option);
+                    });
+                } else {
+                    speakerSelect.innerHTML = '<option value="">Could not load speakers</option>';
+                }
+            });
+
+            // Populate Voices
+            loadVoices(settings);
         }).catch(error => {
-            console.error('Error loading settings or voices:', error);
+            console.error('Error loading settings:', error);
+            // Display a generic error in a relevant place
+            micSelect.innerHTML = '<option value="">Error loading settings</option>';
+            speakerSelect.innerHTML = '<option value="">Error loading settings</option>';
             voiceListContainer.innerHTML = '<p>Error loading settings.</p>';
         });
     }
 
-    settingsForm.addEventListener('submit', function(event) {
-        event.preventDefault();
-        const formData = new FormData(settingsForm);
-        const newVoiceId = formData.get('voice_id');
-        
-        if (newVoiceId) {
-            const newSettings = { ...currentSettings, voice_id: newVoiceId };
-            fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newSettings)
-            }).then(res => res.json()).then(data => {
-                if(data.status === 'success') {
-                    alert('Settings saved! The new voice will take effect the next time the assistant starts.');
-                } else {
-                    alert('Error saving settings.');
+    function loadVoices(settings) {
+        fetch('/api/voices').then(res => res.json()).then(voices => {
+            voiceListContainer.innerHTML = '';
+            if (voices && !voices.error && voices.length > 0) {
+                selectedVoiceIdInput.value = settings.voice_id || '';
+                
+                // Set initial input text if a voice is already selected
+                const selectedVoice = voices.find(v => v.id === settings.voice_id);
+                if (selectedVoice) {
+                    voiceSearchInput.value = selectedVoice.name;
                 }
-            });
-        } else {
-            alert('Please select a voice.');
+
+                voices.forEach(voice => {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.classList.add('voice-option');
+                    optionDiv.textContent = voice.name;
+                    optionDiv.dataset.voiceId = voice.id;
+                    if (voice.id === settings.voice_id) {
+                        optionDiv.classList.add('selected');
+                    }
+                    optionDiv.addEventListener('click', () => {
+                        document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
+                        optionDiv.classList.add('selected');
+                        selectedVoiceIdInput.value = voice.id;
+                        voiceSearchInput.value = voice.name; // Update input text
+                        voiceListContainer.style.display = 'none'; // Hide dropdown
+                    });
+                    voiceListContainer.appendChild(optionDiv);
+                });
+            } else {
+                voiceListContainer.innerHTML = '<p>Could not load voices.</p>';
+            }
+        });
+    }
+
+    function saveSettings(newSettings) {
+        return fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newSettings)
+        }).then(res => res.json()).then(data => {
+            if(data.status === 'success') {
+                alert('Settings saved! The changes will take effect the next time the assistant starts.');
+                // Update current settings object on successful save
+                currentSettings = newSettings;
+            } else {
+                alert('Error saving settings.');
+            }
+        });
+    }
+    
+    // --- Event Listeners ---
+
+    voiceSearchInput.addEventListener('input', function() {
+        const searchTerm = voiceSearchInput.value.toLowerCase();
+        let hasVisibleOptions = false;
+        document.querySelectorAll('.voice-option').forEach(option => {
+            const voiceName = option.textContent.toLowerCase();
+            const isMatch = voiceName.includes(searchTerm);
+            option.style.display = isMatch ? 'block' : 'none';
+            if (isMatch) hasVisibleOptions = true;
+        });
+        voiceListContainer.style.display = hasVisibleOptions ? 'block' : 'none';
+    });
+
+    voiceSearchInput.addEventListener('focus', function() {
+        voiceListContainer.style.display = 'block';
+    });
+
+    document.addEventListener('click', function(event) {
+        const container = document.querySelector('.voice-select-container');
+        if (!container.contains(event.target)) {
+            voiceListContainer.style.display = 'none';
         }
     });
 
-    loadSettingsAndVoices();
+    // --- Main Form Submission ---
+    mainSettingsForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        
+        // Basic validation for timezone
+        const timezoneValue = timezoneInput.value.trim();
+        if (timezoneValue && !timezoneValue.includes('/')) {
+            alert('Please enter a valid IANA timezone format (e.g., "America/New_York").');
+            return;
+        }
+
+        // Validate that a voice is selected
+        const selectedVoiceId = selectedVoiceIdInput.value;
+        if (!selectedVoiceId) {
+            alert('Please select a voice before saving.');
+            return;
+        }
+
+        // Construct the settings object from the form fields
+        const updatedSettings = {
+            wake_word: wakeWordSelect.value,
+            timezone: timezoneValue,
+            mic_device_id: micSelect.value,
+            speaker_device_id: speakerSelect.value,
+            voice_id: selectedVoiceId
+        };
+        
+        saveSettings(updatedSettings);
+    });
+
+    // Initial load
+    loadAndPopulateAll();
 });
 </script>
 {% endblock %} 

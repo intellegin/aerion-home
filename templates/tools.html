@@ -1,0 +1,135 @@
+{% extends "layout.html" %}
+{% block title %}Available Tools{% endblock %}
+
+{% block content %}
+<style>
+    .tool-list {
+        list-style-type: none;
+        padding: 0;
+    }
+    .tool-item {
+        background-color: #fdfdfd;
+        border: 1px solid #eee;
+        margin-bottom: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        transition: box-shadow 0.2s ease-in-out;
+    }
+    .tool-item[open] {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+    }
+    .tool-summary {
+        padding: 20px;
+        cursor: pointer;
+        list-style: none; /* Remove default marker */
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .tool-summary::-webkit-details-marker {
+        display: none; /* Hide marker for Chrome/Safari */
+    }
+    .tool-summary h4 {
+        margin: 0;
+        color: #007BFF;
+        font-size: 1.2em;
+    }
+    .tool-summary::after {
+        content: '+';
+        font-size: 1.8em;
+        color: #007BFF;
+        transition: transform 0.2s ease-in-out;
+    }
+    .tool-item[open] .tool-summary::after {
+        transform: rotate(45deg);
+    }
+    .tool-details {
+        padding: 0 20px 20px 20px; /* Left, right, bottom padding */
+    }
+    .tool-details p {
+        margin-bottom: 15px;
+        color: #333;
+    }
+    .tool-details .parameters {
+        margin-top: 15px;
+        border-top: 1px solid #f0f0f0;
+        padding-top: 15px;
+    }
+    .tool-details .parameters h5 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        font-size: 1em;
+        color: #555;
+    }
+    .tool-details .param-list {
+        list-style-type: none;
+        padding-left: 0;
+    }
+    .tool-details .param-item {
+        font-family: monospace;
+        font-size: 0.9em;
+        margin-bottom: 8px;
+    }
+    .tool-details .param-item .param-name {
+        font-weight: bold;
+        color: #c7254e; /* A reddish color for the name */
+    }
+    .tool-details .param-item .param-type {
+        color: #444;
+        font-style: italic;
+    }
+    .tool-details .param-item .param-desc {
+        display: block;
+        margin-top: 4px;
+        color: #666;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* Back to regular font */
+    }
+    .no-tools {
+        text-align: center;
+        color: #888;
+        margin-top: 30px;
+    }
+</style>
+
+<h3>Available Tools</h3>
+<p>Here is a list of functions the assistant can currently call to perform actions. Click on any tool to see more details.</p>
+
+{% if tools %}
+    <div class="tool-list">
+        {% for tool in tools %}
+            <details class="tool-item">
+                <summary class="tool-summary">
+                    <h4>{{ to_friendly_name(tool.function.name) }}</h4>
+                </summary>
+                <div class="tool-details">
+                    <p><b>Function Name:</b> <code>{{ tool.function.name }}</code></p>
+                    <p>{{ tool.function.description }}</p>
+                    
+                    {% if tool.function.parameters and tool.function.parameters.properties %}
+                        <div class="parameters">
+                            <h5>Parameters:</h5>
+                            <ul class="param-list">
+                                {% for param_name, param_details in tool.function.parameters.properties.items() %}
+                                    <li class="param-item">
+                                        <span class="param-name">{{ param_name }}</span>: 
+                                        <span class="param-type">{{ param_details.type }}</span>
+                                        <span class="param-desc">{{ param_details.description }}</span>
+                                    </li>
+                                 {% endfor %}
+                            </ul>
+                        </div>
+                    {% else %}
+                        <div class="parameters">
+                             <h5>Parameters:</h5>
+                            <p>This tool takes no parameters.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </details>
+        {% endfor %}
+    </div>
+{% else %}
+    <p class="no-tools">No tools are currently available.</p>
+{% endif %}
+
+{% endblock %} 

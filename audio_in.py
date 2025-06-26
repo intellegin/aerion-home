@@ -15,192 +15,115 @@ swap in a different STT engine (e.g. on-device whisper.cpp) later.
 from __future__ import annotations
 
 import os
-import tempfile
-from typing import Optional
 import io
-
-import numpy as np  # type: ignore
-import sounddevice as sd  # type: ignore
-import soundfile as sf  # type: ignore
 import time
 from collections import deque
 
-try:
-    # openai>=1.0 uses the Client class pattern.
-    from openai import OpenAI  # type: ignore
-except ImportError as exc:  # pragma: no cover
-    raise SystemExit(
-        "openai package is required but not installed. Did you run 'pip install -r requirements.txt'?"
-    ) from exc
+import numpy as np
+import sounddevice as sd
+import soundfile as sf
+import webrtcvad
+from transcribe_leopard import transcribe_with_leopard
 
-# Load environment variables (OPENAI_API_KEY, etc.) if present
-try:
-    from dotenv import load_dotenv  # type: ignore
+class VAD:
+    def __init__(self, sensitivity=1, device_index=None, on_realtime_transcription=None):
+        self.sensitivity = sensitivity
+        self.device_index = device_index
+        self.on_realtime_transcription = on_realtime_transcription
+        self.vad = webrtcvad.Vad(sensitivity)
+        self.sample_rate = 16000
+        self.frame_duration_ms = 30
+        self.frame_length = int(self.sample_rate * self.frame_duration_ms / 1000)
+        self.transcriber = Transcriber() # Internal transcriber for real-time updates
 
-    load_dotenv()
-except ImportError:
-    # python-dotenv is optional but recommended; without it the user must set
-    # environment variables manually.
-    pass
+    def _rms(self, block):
+        return np.sqrt(np.mean(np.square(block, dtype=np.float64)))
 
-# Speech-to-text recording utilities
+    def record_until_silence(self, record_timeout=10.0, speech_timeout=2.0):
+        rms_threshold = 0.01
+        silence_frames_needed = int(speech_timeout * 1000 / self.frame_duration_ms)
+        
+        pre_buffer = deque(maxlen=int(0.5 * self.sample_rate / self.frame_length))
+        recording_started = False
+        chunks = []
+        silent_frames = 0
+        start_time = time.time()
 
-import webrtcvad  # type: ignore
+        print("👂 Listening for command...")
+        try:
+            with sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype="int16",
+                blocksize=self.frame_length,
+                device=self.device_index,
+            ) as stream:
+                while True:
+                    if not recording_started and time.time() - start_time > record_timeout:
+                        print(f"⏱️ No speech detected for {record_timeout}s, timing out.")
+                        return None
 
-# Default parameters for recording
-DEFAULT_FS = 16_000  # 16 kHz supported by webrtcvad and required by Leopard
-DEFAULT_CHANNELS = 1  # Mono recording
-
-# Minimum volume to trigger VAD check. Range 0.0–1.0.
-# This can be tuned down if your mic is quiet, or up in a noisy environment.
-# Set via `VAD_RMS_THRESHOLD` env var.
-DEFAULT_RMS_THRESHOLD = 0.01
-
-# VAD aggressiveness, 0-3. 3 is most aggressive against non-speech.
-# Set via `VAD_AGGRESSIVENESS` env var.
-DEFAULT_VAD_AGGRESSIVENESS = 1
-
-DEFAULT_PROMPT = ""
-
-
-def _rms(block: np.ndarray) -> float:
-    """Root-mean-square energy of an audio block."""
-    return float(np.sqrt(np.mean(np.square(block))))
-
-
-def listen_for_speech(timeout: float) -> bool:
-    """
-    Listens to the microphone for a short period to detect any voice activity.
-
-    :param timeout: How long to listen in seconds.
-    :return: True if speech is detected, False otherwise.
-    """
-    vad = webrtcvad.Vad(int(os.getenv("VAD_AGGRESSIVENESS", DEFAULT_VAD_AGGRESSIVENESS)))
-    rms_threshold = float(os.getenv("VAD_RMS_THRESHOLD", DEFAULT_RMS_THRESHOLD))
-    fs = DEFAULT_FS
-    frame_duration_ms = 30
-    frame_length = int(fs * frame_duration_ms / 1000)
-    
-    start_time = time.time()
-    
-    try:
-        with sd.InputStream(samplerate=fs, channels=DEFAULT_CHANNELS, dtype="int16", blocksize=frame_length) as stream:
-            while time.time() - start_time < timeout:
-                block, _ = stream.read(frame_length)
-                block_float = block.astype(np.float32) / 32768.0
-                
-                if _rms(block_float) >= rms_threshold:
-                    pcm_bytes = block.tobytes()
-                    if vad.is_speech(pcm_bytes, fs):
-                        return True
-        return False
-    except Exception as e:
-        print(f"Error while listening for speech: {e}")
-        return False
-
-
-def capture_audio_stream(
-    max_seconds: float = 10.0,
-    fs: int = DEFAULT_FS,
-    channels: int = DEFAULT_CHANNELS,
-    *,
-    rms_threshold: float = float(os.getenv("VAD_RMS_THRESHOLD", DEFAULT_RMS_THRESHOLD)),
-    aggressiveness: int = int(os.getenv("VAD_AGGRESSIVENESS", DEFAULT_VAD_AGGRESSIVENESS)),
-    silence_duration: float = 1.0,
-) -> bytes | None:
-    """
-    Record microphone audio using VAD until silence is detected.
-    Includes a pre-buffer to avoid clipping the start of speech.
-    """
-    vad = webrtcvad.Vad(aggressiveness)
-    frame_duration_ms = 30  # VAD accepts 10, 20, or 30 ms
-    frame_length = int(fs * frame_duration_ms / 1000)
-    frames_needed_for_silence = int(silence_duration * 1000 / frame_duration_ms)
-
-    # Buffer to store audio chunks before speech is detected
-    pre_buffer = deque(maxlen=int(0.5 * fs / frame_length)) # ~0.5 seconds of pre-buffering
-    
-    recording_started = False
-    chunks: list[np.ndarray] = []
-    silent_frames = 0
-    start_time = time.time()
-
-    print("👂 Listening for command...")
-    try:
-        with sd.InputStream(
-            samplerate=fs, channels=channels, dtype="int16", blocksize=frame_length
-        ) as stream:
-            while True:
-                # Timeout check
-                if not recording_started and time.time() - start_time > max_seconds:
-                    print(f"⏱️  No speech detected for {max_seconds}s, timing out.")
-                    return None
-
-                block, _ = stream.read(frame_length)
-                
-                is_speech = False
-                # VAD check only if volume is high enough
-                if _rms(block.astype(np.float32) / 32768.0) >= rms_threshold:
-                    if vad.is_speech(block.tobytes(), fs):
-                        is_speech = True
-
-                if is_speech:
-                    if not recording_started:
-                        recording_started = True
-                        print("🎙️  Recording started...")
-                        try: # Stop any TTS
-                            from speak import stop_speaking
-                            stop_speaking()
-                        except Exception: pass
-                        
-                        # Add the pre-buffered audio to the recording
-                        chunks.extend(list(pre_buffer))
-                        pre_buffer.clear()
+                    block, _ = stream.read(self.frame_length)
                     
-                    chunks.append(block)
-                    silent_frames = 0
-                else:
-                    if not recording_started:
-                        # Keep filling the pre-buffer
-                        pre_buffer.append(block)
+                    is_speech = False
+                    if self._rms(block.astype(np.float32) / 32768.0) >= rms_threshold:
+                        if self.vad.is_speech(block.tobytes(), self.sample_rate):
+                            is_speech = True
+
+                    if is_speech:
+                        if not recording_started:
+                            recording_started = True
+                            print("🎙️ Recording started...")
+                            try:
+                                from speak import stop_speaking
+                                stop_speaking()
+                            except Exception: pass
+                            chunks.extend(list(pre_buffer))
+                            pre_buffer.clear()
+                        
+                        chunks.append(block)
+                        silent_frames = 0
+
                     else:
-                        # We are recording, and this is a silent frame
-                        chunks.append(block) # record the silence too
-                        silent_frames += 1
-                        if silent_frames >= frames_needed_for_silence:
-                            print("🛑 Detected silence, stopping recording.")
-                            break
-    except KeyboardInterrupt:
-        raise SystemExit("Recording interrupted by user.") from None
+                        if not recording_started:
+                            pre_buffer.append(block)
+                        else:
+                            chunks.append(block)
+                            silent_frames += 1
+                            if silent_frames >= silence_frames_needed:
+                                print("🛑 Detected silence, stopping recording.")
+                                break
+        except KeyboardInterrupt:
+            raise SystemExit("Recording interrupted by user.") from None
 
-    if not chunks:
-        return None
+        if not chunks:
+            return None
 
-    recording = np.concatenate(chunks, axis=0)
-    buffer = io.BytesIO()
-    sf.write(buffer, recording, fs, format='WAV', subtype='PCM_16')
-    buffer.seek(0)
-    return buffer.read()
+        recording = np.concatenate(chunks, axis=0)
+        buffer = io.BytesIO()
+        sf.write(buffer, recording, self.sample_rate, format='WAV', subtype='PCM_16')
+        buffer.seek(0)
+        return buffer.read()
 
 
-def capture_and_transcribe(max_seconds: float = 15.0) -> str:
-    """Record until silence using VAD and immediately get its transcription."""
-    audio_data = capture_audio_stream(max_seconds=max_seconds)
-    if not audio_data:
-        return ""
+class Transcriber:
+    def __init__(self):
+        # This class no longer needs arguments
+        pass
 
-    # Check for minimum audio length before processing
-    try:
-        with io.BytesIO(audio_data) as buffer:
-            with sf.SoundFile(buffer, 'r') as sound_file:
-                duration = sound_file.frames / sound_file.samplerate
-                if duration < 0.2:  # Leopard has a minimum audio length
-                    print(f"🎤 Audio too short ({duration:.2f}s), skipping transcription.")
-                    return ""
-    except Exception as e:
-        print(f"Could not read audio duration: {e}. Skipping transcription.")
-        return ""
-    
-    # Use the new on-device transcription
-    from transcribe_leopard import transcribe_with_leopard
-    return transcribe_with_leopard(audio_data) 
+    def transcribe_audio(self, audio_data: bytes) -> str:
+        if not audio_data:
+            return ""
+
+        try:
+            with io.BytesIO(audio_data) as buffer:
+                with sf.SoundFile(buffer, 'r') as sound_file:
+                    duration = sound_file.frames / sound_file.samplerate
+                    if duration < 0.2:
+                        print(f"🎤 Audio too short ({duration:.2f}s), skipping transcription.")
+                        return ""
+        except Exception as e:
+            print(f"Could not read audio duration: {e}. Skipping transcription.")
+            return ""
+        
+        return transcribe_with_leopard(audio_data) 

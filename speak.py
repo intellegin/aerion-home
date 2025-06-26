@@ -20,6 +20,16 @@ import io
 import json
 from typing import NoReturn, Optional
 import threading
+from socket_client import sio_instance
+
+# Conditionally import ElevenLabs config to avoid errors if not present
+try:
+    from config import ELEVENLABS_API_KEY, VOICE_ID, ANNOUNCER_VOICE_ID, TTS_MODEL
+except ImportError:
+    ELEVENLABS_API_KEY = None
+    VOICE_ID = None
+    ANNOUNCER_VOICE_ID = None
+    TTS_MODEL = None
 
 # OpenAI client for TTS
 try:
@@ -47,6 +57,9 @@ DEFAULT_VOICE = "4YYIPFl9wE5c4L2eu2Gb"
 
 # OpenAI voice choices
 _OPENAI_VOICES = {"alloy", "echo", "fable", "onyx", "nova", "shimmer"}
+
+# --- Globals ---
+stop_flag = threading.Event()
 
 
 def _get_current_settings():
@@ -132,7 +145,7 @@ def _speak_with_command_async(cmd: list[str], *, add_voice: bool = False) -> boo
             return False
 
 
-def _speak_openai_sync(text: str, voice: str) -> bool:
+def _speak_openai_sync(text: str, voice: str, device: int | None = None) -> bool:
     """Use OpenAI TTS if available. Returns True if successful."""
     if OpenAI is None or voice.lower() not in _OPENAI_VOICES:
         return False
@@ -157,7 +170,7 @@ def _speak_openai_sync(text: str, voice: str) -> bool:
         wav_bytes = response.content  # type: ignore[attr-defined]
         with io.BytesIO(wav_bytes) as bio:
             data, samplerate = sf.read(bio, dtype="float32")
-        sd.play(data, samplerate)
+        sd.play(data, samplerate, device=device)
         sd.wait()
         return True
     except Exception as exc:
@@ -165,7 +178,7 @@ def _speak_openai_sync(text: str, voice: str) -> bool:
         return False
 
 
-def _speak_eleven_sync(text: str, voice: str) -> bool:
+def _speak_eleven_sync(text: str, voice: str, device: int | None = None) -> bool:
     """Use ElevenLabs TTS if API key and library are available. Returns True on success."""
 
     if _eleven_generate is None and _eleven_play is None:
@@ -201,7 +214,28 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
                 output_format="mp3_44100_128",
             )
             from elevenlabs import play as _new_play  # type: ignore
-            _new_play(audio)  # type: ignore[arg-type]
+            import sounddevice as sd
+            
+            # Get the default device info if no device is specified
+            if device is None:
+                _new_play(audio)
+            else:
+                # This is a bit of a workaround to play to a specific device.
+                # elevenlabs.play doesn't directly support it in all versions,
+                # so we decode it and play it with sounddevice.
+                import io
+                import soundfile as sf
+                
+                # Convert list of bytes to a byte stream
+                byte_stream = io.BytesIO()
+                for chunk in audio:
+                    byte_stream.write(chunk)
+                byte_stream.seek(0)
+                
+                data, samplerate = sf.read(byte_stream, dtype='float32')
+                sd.play(data, samplerate, device=device)
+                sd.wait()
+
             return True
         except Exception as exc:  # pragma: no cover
             print(f"[ElevenLabs v2 TTS error] {exc}")
@@ -218,14 +252,29 @@ def _speak_eleven_sync(text: str, voice: str) -> bool:
     try:
         _eleven_set_api_key(api_key)  # type: ignore[arg-type]
         audio_data = _eleven_generate(text=text, voice=voice)  # type: ignore[arg-type]
-        _eleven_play(audio_data)  # type: ignore[arg-type]
+        
+        # elevenlabs.play doesn't support device selection in the legacy SDK,
+        # so we play it manually with sounddevice if a device is specified.
+        if device is None:
+            _eleven_play(audio_data)  # type: ignore[arg-type]
+        else:
+            import io
+            import sounddevice as sd
+            from pydub import AudioSegment
+
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_data), format="mp3")
+            samples = audio_segment.get_array_of_samples()
+            
+            sd.play(samples, audio_segment.frame_rate, device=device)
+            sd.wait()
+            
         return True
     except Exception as exc:  # pragma: no cover
         print(f"[ElevenLabs legacy TTS error] {exc}")
         return False
 
 
-def _speak_eleven_async(text: str) -> threading.Thread | None:
+def _speak_eleven_async(text: str, device_id: int | None) -> threading.Thread | None:
     """Speak using ElevenLabs in a background thread (non-blocking)."""
     # Quick check for API key before starting thread.
     if not (os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")):
@@ -243,7 +292,7 @@ def _speak_eleven_async(text: str) -> threading.Thread | None:
 
     def _worker():
         """Worker thread to call the synchronous speak method."""
-        _speak_eleven_sync(text, _current_voice())
+        _speak_eleven_sync(text, _current_voice(), device=device_id)
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
@@ -254,47 +303,106 @@ def _speak_eleven_async(text: str) -> threading.Thread | None:
 # Public API
 # ---------------------------------------------------------------------------
 
-def speak_async(text: str) -> threading.Thread | None:
+def speak_async(text: str, device_id: int | None = None) -> threading.Thread | None:
     """
-    Speak *text* without blocking and return the thread.
-    Call `stop_speaking()` to interrupt.
+    Synthesize and speak the given text in a background thread.
+    This function will select the best available TTS method.
+    It returns the thread so the caller can `join()` it if needed.
     """
-    # First stop anything that might still be playing
-    stop_speaking()
+    # Notify the UI that the AI is speaking and what it's saying
+    sio_instance.update_ai_speech(text)
 
-    # Prefer ElevenLabs if available
-    if (thread := _speak_eleven_async(text)):
-        return thread
+    # Prioritize ElevenLabs if the key is set
+    if os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY"):
+        return _speak_eleven_async(text, device_id)
 
-    # Fallback to OpenAI
-    if OpenAI is not None:
+    voice = _current_voice()
+
+    # Priority 2: OpenAI if an OpenAI voice is selected
+    if voice in _OPENAI_VOICES:
         def _worker():
-            _speak_openai_sync(text, _current_voice())
+            _speak_openai_sync(text, voice, device=device_id)
         
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
         return thread
 
-    # Fallback to system commands
-    if sys.platform == "darwin":
-        if _speak_with_command_async(["say", text], add_voice=True):
-            return None  # Cannot return thread for subprocess
-    elif sys.platform.startswith("linux"):
-        if _speak_with_command_async(["espeak", text], add_voice=True):
-            return None # Cannot return thread for subprocess
-
-    # Final fallback to pyttsx3
-    if (thread := _speak_pyttsx3_async(text)):
+    # Priority 3: pyttsx3 for local, offline TTS
+    thread = _speak_pyttsx3_async(text)
+    if thread:
         return thread
 
-    print("Warning: No TTS engine available.")
-    return None
+    # Fallback to system commands
+    def _system_worker():
+        speak_sync(text)
+    
+    thread = threading.Thread(target=_system_worker, daemon=True)
+    thread.start()
+    return thread
 
 
-# Backward-compat name kept
 def speak_text(text: str) -> None:  # noqa: D401
-    """Compatibility wrapper for older calls."""
-    speak_async(text)
+    """DEPRECATED: Use speak_async for non-blocking or speak_sync for blocking."""
+    speak_sync(text)
+
+
+def play_activation_sound(device_id: int | None = None) -> None:
+    """
+    Plays a short, non-blocking activation sound.
+    """
+    def _worker():
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            samplerate = 44100
+            frequency = 880.0  # A pleasant A5 note
+            duration = 0.15   # seconds
+            volume = 0.5
+
+            t = np.linspace(0., duration, int(samplerate * duration), endpoint=False)
+            amplitude = np.iinfo(np.int16).max * volume
+            data = amplitude * np.sin(2. * np.pi * frequency * t)
+
+            sd.play(data.astype(np.int16), samplerate, device=device_id)
+            sd.wait()
+        except Exception as e:
+            print(f"Could not play activation sound: {e}")
+
+    # Run in a separate thread so it doesn't block the main flow
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+
+def play_deactivation_sound(device_id: int | None = None) -> None:
+    """
+    Plays a short, non-blocking deactivation sound.
+    """
+    def _worker():
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            samplerate = 44100
+            frequency = 440.0  # A lower A4 note
+            duration = 0.15
+            volume = 0.4
+
+            t = np.linspace(0., duration, int(samplerate * duration), endpoint=False)
+            amplitude = np.iinfo(np.int16).max * volume
+            data = amplitude * np.sin(2. * np.pi * frequency * t)
+
+            # A quick fade out to make it sound softer
+            fade_out = np.linspace(1., 0., int(samplerate * duration), endpoint=False)
+            data *= fade_out
+
+            sd.play(data.astype(np.int16), samplerate, device=device_id)
+            sd.wait()
+        except Exception as e:
+            print(f"Could not play deactivation sound: {e}")
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
 
 
 # ---------------------------------------------------------------------------
@@ -302,46 +410,39 @@ def speak_text(text: str) -> None:  # noqa: D401
 # ---------------------------------------------------------------------------
 
 def speak_sync(text: str) -> None:
-    """Speak *text* and block until finished (no interruption)."""
-
-    stop_speaking()
-
+    """
+    Speak text synchronously (blocks until speech is finished).
+    Chooses the best TTS engine available.
+    """
     voice = _current_voice()
 
-    # Prefer ElevenLabs if configured
-    if _speak_eleven_sync(text, voice):
-        return
+    # Priority 1: ElevenLabs
+    if len(voice) > 5 and voice not in _OPENAI_VOICES:
+        if _speak_eleven_sync(text, voice):
+            return
 
-    # Next try OpenAI TTS
-    if _speak_openai_sync(text, voice):
-        return
+    # Priority 2: OpenAI
+    if voice in _OPENAI_VOICES:
+        if _speak_openai_sync(text, voice):
+            return
 
-    if sys.platform.startswith("darwin"):
-        subprocess.run(["say", "-v", voice, text])
-        return
-
-    # Try pyttsx3
-    try:
-        import pyttsx3  # type: ignore
-
-        engine = pyttsx3.init()
-        voice_name = voice
-        for v in engine.getProperty("voices"):
-            if voice_name.lower() in v.name.lower():
-                engine.setProperty("voice", v.id)
-                break
-        engine.say(text)
-        engine.runAndWait()
-        return
-    except Exception:
-        pass
-
-    # Fallback espeak
-    if shutil.which("espeak"):
-        subprocess.run(["espeak", text])
-        return
-
-    print("(TTS unavailable — install pyttsx3, or 'say'/'espeak'.)")
+    # Fallback to system commands
+    if sys.platform == "darwin":
+        # On macOS, 'say' is reliable
+        _speak_with_command_async(["say", text], add_voice=True)
+    elif sys.platform.startswith("linux"):
+        # On Linux, 'espeak' is common
+        _speak_with_command_async(["espeak", "-v", "en-us", text])
+    else:
+        print("Warning: No TTS engine available for this platform.")
+        # Attempt pyttsx3 as a last resort, but synchronously
+        try:
+            import pyttsx3  # type: ignore
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+        except Exception:
+            pass
 
 
 def get_elevenlabs_voices():

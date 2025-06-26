@@ -4,16 +4,28 @@ import sys
 import atexit
 import json
 import time
+import threading
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from speak import get_elevenlabs_voices, DEFAULT_VOICE # Import the new function
 import google_auth as google_auth_helper # Import the new auth module
+import sounddevice as sd # Import the sounddevice library
+from tools import tools, _load_tools # Import the loader
+from audio_in import Transcriber # Corrected import path
+from command_handler import handle_command, conversation_history, SYSTEM_PROMPT
 
 app = Flask(__name__)
 CORS(app)
 app.secret_key = 'super_secret_key_for_flashing' # Required for flashing messages
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+def _to_friendly_name(name: str) -> str:
+    """Converts a function_name like 'get_all_events' to 'Get All Events'."""
+    return name.replace('_', ' ').title()
+
+# Make the function available in all templates
+app.jinja_env.globals.update(to_friendly_name=_to_friendly_name)
 
 # Global variable to hold the main.py process
 main_process = None
@@ -53,6 +65,10 @@ def get_editable_files():
             files.append(f)
     return sorted(files)
 
+def get_python_files_to_watch():
+    """Returns a list of all .py files to monitor for changes."""
+    return [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.py')]
+
 @app.route('/')
 def index():
     """A minimalist home page with just the assistant control."""
@@ -68,6 +84,11 @@ def files():
 def settings():
     """Page for managing application settings, like voice selection."""
     return render_template('settings.html')
+
+@app.route('/tools')
+def tools_page():
+    """Page to display available tools."""
+    return render_template('tools.html', tools=tools)
 
 @app.route('/auth')
 def auth():
@@ -149,12 +170,12 @@ def get_cached_voices():
 def emit_status_update():
     """Gets the current status and emits it to all clients."""
     global main_process
+    settings = get_settings()
     
     current_voice_name = "Unknown"
     try:
         voices = get_cached_voices()
         if voices:
-            settings = get_settings()
             current_voice_id = settings.get("voice_id") or os.getenv("VOICE_NAME") or DEFAULT_VOICE
             voice_map = {v['id']: v['name'] for v in voices}
             current_voice_name = voice_map.get(current_voice_id, "Default")
@@ -162,15 +183,69 @@ def emit_status_update():
         print(f"Could not determine current voice name: {e}")
 
     app_status = 'running' if main_process and main_process.poll() is None else 'stopped'
+    wake_word = settings.get("wake_word", "jarvis")
     
     # Emit the status to all clients
-    socketio.emit('status_update', {'status': app_status, 'voice_name': current_voice_name})
+    socketio.emit('status_update', {
+        'status': app_status, 
+        'voice_name': current_voice_name,
+        'wake_word': wake_word
+    })
 
 @socketio.on('connect')
 def handle_connect():
     """Send initial status to a newly connected client."""
     print("Client connected. Sending initial status.")
     emit_status_update()
+
+# --- Assistant Process Event Relay ---
+# These handlers receive events from the main.py assistant process
+# and broadcast them to all connected web clients.
+
+@socketio.on('user_speech_update')
+def handle_user_speech(data):
+    """Relay user speech from the assistant process to all web clients."""
+    socketio.emit('user_speech_update', data)
+
+@socketio.on('ai_speech_update')
+def handle_ai_speech(data):
+    """Relay AI speech from the assistant process to all web clients."""
+    socketio.emit('ai_speech_update', data)
+
+@socketio.on('assistant_state_update')
+def handle_assistant_state(data):
+    """Relay assistant state from the assistant process to all web clients."""
+    socketio.emit('assistant_state_update', data)
+
+@app.route('/api/microphones')
+def get_microphones_endpoint():
+    """Endpoint to get available audio input devices."""
+    try:
+        devices = sd.query_devices()
+        input_devices = [
+            {'id': i, 'name': d['name']} 
+            for i, d in enumerate(devices) 
+            if d['max_input_channels'] > 0
+        ]
+        return jsonify(input_devices)
+    except Exception as e:
+        print(f"Error querying audio devices: {e}")
+        return jsonify({"error": "Could not fetch audio devices."}), 500
+
+@app.route('/api/speakers')
+def get_speakers_endpoint():
+    """Endpoint to get available audio output devices."""
+    try:
+        devices = sd.query_devices()
+        output_devices = [
+            {'id': i, 'name': d['name']}
+            for i, d in enumerate(devices)
+            if d['max_output_channels'] > 0
+        ]
+        return jsonify(output_devices)
+    except Exception as e:
+        print(f"Error querying audio devices: {e}")
+        return jsonify({"error": "Could not fetch audio devices."}), 500
 
 @app.route('/api/voices')
 def get_voices_endpoint():
@@ -198,14 +273,7 @@ def start_app():
     if main_process and main_process.poll() is None:
         return jsonify({'status': 'running', 'message': 'Assistant is already running.'})
     
-    python_executable = sys.executable
-    main_script_path = os.path.join(os.path.dirname(__file__), 'main.py')
-    
-    print(f"Starting assistant process: {python_executable} {main_script_path}")
-    main_process = subprocess.Popen([
-        python_executable, main_script_path,
-        '--socket-port', str(5001) # Use the same port as the web UI
-    ])
+    start_assistant_process()
     emit_status_update()
     return jsonify({'status': 'running', 'message': 'Assistant started.'})
 
@@ -226,6 +294,21 @@ def stop_app():
     
     emit_status_update() # Also emit if it was already stopped
     return jsonify({'status': 'stopped', 'message': 'Assistant was not running.'})
+
+def start_assistant_process():
+    """Starts the main.py assistant as a subprocess."""
+    global main_process
+    if main_process and main_process.poll() is None:
+        return # Already running
+
+    python_executable = sys.executable
+    main_script_path = os.path.join(os.path.dirname(__file__), 'main.py')
+    
+    print(f"Starting assistant process: {python_executable} {main_script_path}")
+    main_process = subprocess.Popen([
+        python_executable, main_script_path,
+        '--socket-port', str(5001) # Use the same port as the web UI
+    ])
 
 def cleanup_assistant_process():
     """Ensure the assistant process is terminated when the web UI exits."""
@@ -268,7 +351,26 @@ def google_logout():
     success = google_auth_helper.revoke_auth()
     return jsonify({'status': 'success' if success else 'failure'})
 
-if __name__ == '__main__':
-    print("Starting Flask web UI with SocketIO...")
-    print("Open your browser and go to http://127.0.0.1:5001")
-    socketio.run(app, debug=True, port=5001) 
+def run_assistant_process():
+    """Starts the assistant process in a separate thread."""
+    global assistant_process
+    # Ensure the tools are loaded in the main process before starting the assistant
+    _load_tools()
+    
+    assistant_path = os.path.join(os.path.dirname(__file__), "main.py")
+    if assistant_process and assistant_process.is_alive():
+        print("Assistant process already running.")
+
+def main():
+    """Starts the Flask web UI and the assistant process."""
+    # Watch for changes in the main script and the tools directory
+    extra_files = [
+        os.path.join(os.path.dirname(__file__), 'command_handler.py'),
+        os.path.join(os.path.dirname(__file__), 'tools') # Watch the whole directory
+    ]
+    
+    # Start the Flask app with the reloader
+    socketio.run(app, host="127.0.0.1", port=5001, debug=True, allow_unsafe_werkzeug=True, extra_files=extra_files)
+
+if __name__ == "__main__":
+    main() 

@@ -17,123 +17,227 @@ from __future__ import annotations
 import time
 import json
 import threading
+import os
+import sys
+import asyncio
 import uuid
 import argparse
-import socketio
+from dotenv import load_dotenv
+from functools import partial
 
 from command_handler import handle_command, SYSTEM_PROMPT, RestartRequest
-from audio_in import capture_and_transcribe, listen_for_speech
-from speak import speak_async, stop_speaking
-from wake_word_listener import listen_for_wake_word
+from audio_in import VAD, Transcriber
+from speak import speak_async, stop_speaking, play_activation_sound, play_deactivation_sound
+from wake_word_listener import WakeWordDetector
 from database import log_message, create_chat_session
-from socket_client import sio # Import the client from the new module
+from socket_client import SocketClient, sio_instance
 
-@sio.event
-def connect():
-    print("Successfully connected to the web UI Socket.IO server.")
+load_dotenv()
 
-@sio.event
-def connect_error(data):
-    print("Failed to connect to the web UI Socket.IO server.")
+# Get the process ID once when the script starts.
+process_id = os.getpid()
 
-@sio.event
-def disconnect():
-    print("Disconnected from the web UI Socket.IO server.")
+# --- Settings ---
+def get_settings():
+    """Reads settings from the settings.json file."""
+    try:
+        with open('settings.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
+# --- Constants ---
+WAKE_WORD_SENSITIVITY = 0.6
+VAD_SENSITIVITY = 3
+RECORD_TIMEOUT_SEC = 10
+SPEECH_TIMEOUT_SEC = 3.0 
 
-def main_loop():
-    """
-    The main operational loop of the assistant.
-    This function is designed to be restartable.
-    """
-    # 1. Wait for the wake word
-    if not listen_for_wake_word(keyword="computer"):
-        print("Wake word detection failed or was interrupted. Exiting for now.")
-        # We return here, and the outer loop will decide whether to restart.
-        # This prevents a tight loop if the audio device is disconnected.
-        return
+# --- State Management ---
+class AssistantState:
+    IDLE = 1
+    LISTENING_FOR_WAKE_WORD = 2
+    LISTENING_FOR_COMMAND = 3
+    PROCESSING_COMMAND = 4
+    SPEAKING = 5
 
-    print("✅ Wake word detected. Starting conversation...")
-    session_id = int(time.time())
-    create_chat_session(session_id)
-    
-    # Initialize conversation history with the system prompt
-    conversation_history = [SYSTEM_PROMPT]
-    
-    # 2. Conversation Loop
-    while True:
-        print("Listening for command...")
-        user_input = capture_and_transcribe(max_seconds=15.0)
+state = AssistantState.IDLE
+speaking_thread = None
+conversation_history = [SYSTEM_PROMPT]
+session_id = None
 
-        # If transcription is empty or just whitespace, it's a timeout or misfire.
-        if not user_input or not user_input.strip():
-            print("… Conversation timed out or empty audio. Returning to wake word listening.")
-            break  # Exit conversation loop, go back to waiting for wake word.
+stop_listening_flag = threading.Event()
 
-        log_message(session_id=session_id, content=user_input, direction="outbound")
-
-        # Get response from LLM
-        response = handle_command(user_input, conversation_history)
+def on_wake_word_detected(speaker_device_id: int | None = None):
+    """Callback function for when the wake word is detected."""
+    global state, session_id, conversation_history
+    if state == AssistantState.LISTENING_FOR_WAKE_WORD:
+        play_activation_sound(device_id=speaker_device_id)
+        print("Wake word detected! Listening for command...")
+        sio_instance.update_assistant_state("listening")
+        state = AssistantState.LISTENING_FOR_COMMAND
         
-        if not response:
-            print("LLM returned no response. Listening again.")
-            continue # Listen for the next command
+        if not session_id:
+            session_id = int(process_id)
+            create_chat_session(session_id)
+            conversation_history = [SYSTEM_PROMPT]
 
-        log_message(session_id=session_id, content=response, direction="inbound")
+def reset_to_idle(speaker_device_id: int | None = None):
+    """Resets the assistant's state back to idle."""
+    global state, speaking_thread, session_id
+    print("Resetting to idle state.")
+    sio_instance.update_assistant_state("idle")
+    play_deactivation_sound(device_id=speaker_device_id)
+    if speaking_thread and speaking_thread.is_alive():
+        stop_speaking()
+        speaking_thread.join()
+    state = AssistantState.LISTENING_FOR_WAKE_WORD
+    speaking_thread = None
+    # Do not reset session_id here, to allow for conversation continuation.
 
-        # Speak the response and listen for barge-in
-        speaking_thread = speak_async(response)
-        if not speaking_thread:
-            # This can happen if a TTS method that doesn't support threading is used.
-            # In this case, we can't do barge-in, so we just wait for it to finish implicitly.
-            continue
+async def main(web_ui_socket_port=None):
+    """The main application loop."""
+    global state, speaking_thread, conversation_history
 
-        # --- Barge-in Logic ---
-        time.sleep(0.2)  # Grace period for TTS audio to start playing.
-        interrupted = False
-        while speaking_thread.is_alive():
-            if listen_for_speech(timeout=0.1): # Check for speech every 100ms
-                print("🎤 Barge-in detected! Stopping TTS...")
-                stop_speaking()
-                interrupted = True
-                break
-            time.sleep(0.1)
+    if web_ui_socket_port:
+        sio_instance.start(port=web_ui_socket_port)
 
-        speaking_thread.join() # Wait for the thread to finish cleanly
+    # --- Initialization ---
+    settings = get_settings()
+    wake_word = settings.get("wake_word", "jarvis").lower()
+    
+    mic_device_id_str = settings.get("mic_device_id")
+    mic_device_id = None
+    if mic_device_id_str:
+        try:
+            mic_device_id = int(mic_device_id_str)
+        except (ValueError, TypeError):
+            print(f"Warning: Invalid microphone device ID '{mic_device_id_str}'. Using default.")
 
-        if interrupted:
-            # If interrupted, immediately start listening for the next command
-            continue
+    speaker_device_id_str = settings.get("speaker_device_id")
+    speaker_device_id = None
+    if speaker_device_id_str:
+        try:
+            speaker_device_id = int(speaker_device_id_str)
+        except (ValueError, TypeError):
+            print(f"Warning: Invalid speaker device ID '{speaker_device_id_str}'. Using default.")
 
+    # Create a callback that includes the speaker_device_id
+    on_detection_callback = partial(on_wake_word_detected, speaker_device_id=speaker_device_id)
+
+    wake_word_detector = WakeWordDetector(
+        keyword=wake_word, 
+        sensitivity=WAKE_WORD_SENSITIVITY, 
+        on_wake_word=on_detection_callback,
+        device_index=mic_device_id
+    )
+    
+    vad = VAD(
+        sensitivity=VAD_SENSITIVITY, 
+        device_index=mic_device_id,
+        on_realtime_transcription=sio_instance.update_user_speech
+    )
+    transcriber = Transcriber()
+    
+    state = AssistantState.LISTENING_FOR_WAKE_WORD
+    print(f"Assistant is up and running. Listening for '{wake_word}'...")
+
+    # --- Main Loop ---
+    while not stop_listening_flag.is_set():
+        try:
+            if state == AssistantState.LISTENING_FOR_WAKE_WORD:
+                wake_word_detector.start()
+                # The wake word detector is non-blocking and uses a callback,
+                # so we need to wait here. A sleep loop is simple and effective.
+                while state == AssistantState.LISTENING_FOR_WAKE_WORD:
+                    await asyncio.sleep(0.1)
+
+            elif state == AssistantState.LISTENING_FOR_COMMAND:
+                # The VAD uses the selected microphone.
+                audio_data = vad.record_until_silence(
+                    record_timeout=RECORD_TIMEOUT_SEC, 
+                    speech_timeout=SPEECH_TIMEOUT_SEC
+                )
+                
+                if not audio_data:
+                    print("No command heard, returning to wake word listening.")
+                    reset_to_idle(speaker_device_id=speaker_device_id)
+                    continue
+
+                state = AssistantState.PROCESSING_COMMAND
+                sio_instance.update_assistant_state("processing")
+                print("Transcribing command...")
+                user_input = transcriber.transcribe_audio(audio_data)
+                
+                # Send the final transcription to the UI
+                if user_input:
+                    sio_instance.emit('final_transcription', {'text': user_input})
+
+                if not user_input or not user_input.strip():
+                    print("Transcription is empty, ignoring.")
+                    reset_to_idle(speaker_device_id=speaker_device_id)
+                    continue
+
+                print(f"USER: {user_input}")
+                log_message(session_id, user_input, "outbound")
+                conversation_history.append({"role": "user", "content": user_input})
+
+                try:
+                    response = handle_command(user_input, conversation_history)
+                except RestartRequest:
+                    reset_to_idle(speaker_device_id=speaker_device_id)
+                    continue
+
+                if not response:
+                    print("No response from command handler, going back to listening.")
+                    state = AssistantState.LISTENING_FOR_WAKE_WORD
+                    continue
+
+                state = AssistantState.SPEAKING
+                sio_instance.update_assistant_state("speaking")
+                print(f"ASSISTANT: {response}")
+                log_message(session_id, response, "inbound")
+                conversation_history.append({"role": "assistant", "content": response})
+
+                # The speak_async function returns the thread that is playing the audio.
+                audio_thread = speak_async(response, device_id=speaker_device_id)
+                
+                # Wait for the audio to finish playing before resetting.
+                if audio_thread:
+                    audio_thread.join()
+                
+                # If the assistant asked a question, listen for the user's answer.
+                # Otherwise, reset to wait for the wake word.
+                if response.strip().endswith('?'):
+                    print("Assistant asked a question. Listening for user's response...")
+                    sio_instance.update_assistant_state("listening")
+                    state = AssistantState.LISTENING_FOR_COMMAND
+                else:
+                    reset_to_idle(speaker_device_id=speaker_device_id)
+
+            else:
+                 await asyncio.sleep(0.1)
+
+        except KeyboardInterrupt:
+            print("Shutting down assistant.")
+            break
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            reset_to_idle(speaker_device_id=speaker_device_id)
+
+    # --- Cleanup ---
+    wake_word_detector.stop()
+    sio_instance.stop()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--socket-port", help="Port for Socket.IO connection", default=5001)
+    parser = argparse.ArgumentParser(description="Run the voice assistant.")
+    parser.add_argument(
+        '--socket-port',
+        type=int,
+        help='Port for the web UI socket connection (optional)'
+    )
     args = parser.parse_args()
 
     try:
-        sio.connect(f'http://127.0.0.1:{args.socket_port}')
-    except socketio.exceptions.ConnectionError as e:
-        print(f"Could not connect to Socket.IO server: {e}")
-
-    # This loop provides crash protection. The script is started/stopped by the web_ui.py process.
-    while True:
-        try:
-            print("🚀 Assistant process started. Running main loop...")
-            main_loop()
-        except RestartRequest:
-            print("📢 Restarting application as requested by user...")
-            continue # Immediately loop back to the start of main_loop
-        except KeyboardInterrupt:
-            print("\nExiting application. Goodbye!")
-            break
-        except Exception as e:
-            print(f"💥 An unexpected error occurred: {e}")
-            print("🤕 Restarting the main loop in 5 seconds...")
-            # Log the full traceback for debugging
-            import traceback
-            traceback.print_exc()
-            time.sleep(5)
-    
-    if sio.connected:
-        sio.disconnect() 
+        asyncio.run(main(web_ui_socket_port=args.socket_port))
+    except KeyboardInterrupt:
+        print("Assistant stopped by user.") 

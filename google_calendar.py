@@ -1,6 +1,8 @@
 import datetime
 import os.path
 import json
+import pytz
+from typing import Union
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -109,9 +111,10 @@ def get_upcoming_events(max_results=10, calendar_id="primary"):
     except HttpError as error:
         return f"An error occurred: {error}"
 
-def get_all_upcoming_events(max_results_per_calendar=5):
+def get_all_upcoming_events(max_results_per_calendar=5, timezone: Union[str, None] = None):
     """
     Fetches upcoming events from all available calendars, combines them, and sorts them.
+    If a timezone is provided, it returns events starting from 'now' in that timezone.
     """
     service = get_calendar_service()
     if not service:
@@ -125,7 +128,18 @@ def get_all_upcoming_events(max_results_per_calendar=5):
             return "No calendars found."
 
         all_events = []
-        now = datetime.datetime.utcnow().isoformat() + "Z"
+        
+        # Determine the start time for the query
+        if timezone:
+            try:
+                tz = pytz.timezone(timezone)
+                now = datetime.datetime.now(tz).isoformat()
+                print(f"Querying events from now in timezone: {timezone}")
+            except pytz.UnknownTimeZoneError:
+                print(f"Warning: Unknown timezone '{timezone}'. Falling back to UTC.")
+                now = datetime.datetime.utcnow().isoformat() + "Z"
+        else:
+            now = datetime.datetime.utcnow().isoformat() + "Z"
 
         # 2. Loop through each calendar and get events
         for cal in calendars:
@@ -139,6 +153,7 @@ def get_all_upcoming_events(max_results_per_calendar=5):
                     maxResults=max_results_per_calendar,
                     singleEvents=True,
                     orderBy="startTime",
+                    timeZone=timezone if timezone else 'UTC' # Specify timezone for the query
                 )
                 .execute()
             )

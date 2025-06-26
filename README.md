@@ -1,6 +1,6 @@
 # Pi-5 AI Voice Assistant
 
-This project transforms a computer (originally a Raspberry Pi 5, now platform-agnostic) into a sophisticated, voice-controlled AI assistant. It features a modular architecture with a decoupled frontend and backend, real-time communication, and integrations with external services like Google and ElevenLabs.
+This project transforms a computer (originally a Raspberry Pi 5, now platform-agnostic) into a sophisticated, voice-controlled AI assistant. It features a modular architecture, a web-based UI for control and real-time feedback, and an extensible tool system that allows the AI to interact with external services like Google Calendar, web search, and more.
 
 ---
 
@@ -8,46 +8,45 @@ This project transforms a computer (originally a Raspberry Pi 5, now platform-ag
 
 The system is split into two main processes that communicate in real time:
 
-1.  **Web UI (`web_ui.py`)**: A Flask application that serves as the control panel and process manager. It provides a web interface to start/stop the assistant, manage settings, and handle authentication.
+1.  **Web UI (`web_ui.py`)**: A Flask application that serves as the control panel and process manager. It provides a web interface to start/stop the assistant, manage settings, and view the conversation in real time.
 2.  **Assistant (`main.py`)**: The core voice assistant logic. It handles wake-word detection, audio transcription, command processing via an LLM, and text-to-speech responses.
 
-Communication between the frontend (browser), the web UI server, and the assistant process is handled by **Socket.IO**, enabling real-time status updates and commands (e.g., voice-based UI navigation).
+Communication between the browser, the web UI server, and the assistant process is handled by **Socket.IO**, enabling real-time status updates, conversation display, and commands.
 
 ```mermaid
 graph TD
     subgraph Browser
-        A[Web UI - index.html]
+        A[Web UI - home.html]
     end
 
     subgraph Web Server (Flask)
         B(web_ui.py)
         C{settings.json}
-        D{google_token.json}
     end
     
     subgraph Assistant Process
         E(main.py)
         F[Wake Word]
-        G[Audio Transcription]
+        G[VAD & Transcription]
         H[LLM Command Handler]
-        I[Tools - Google, Web, etc.]
+        I[Modular Tools]
         J[Text-to-Speech]
     end
 
     A -- HTTP/Socket.IO --> B
     B -- Manages --> E
     B -- Reads/Writes --> C
-    B -- Manages --> D
 
     E -- Socket.IO --> B
     B -- Socket.IO --> A
 
     E --> F
-    F --> G
+    F --> E
+    E -- State Change --> G
     G --> H
     H --> I
+    I -- Result --> H
     H --> J
-    I -- response --> H
 ```
 
 ---
@@ -55,36 +54,33 @@ graph TD
 ## Key Components
 
 -   **`web_ui.py`**: Flask-based web server.
-    -   Starts/stops the `main.py` process.
+    -   Starts/stops the `main.py` assistant process.
     -   Serves the HTML/CSS/JS frontend.
-    -   Handles Google OAuth2 authentication flow.
-    -   Provides API endpoints for settings and voice model management.
-    -   Uses Socket.IO to push real-time status updates to the browser.
+    -   Handles Google OAuth2 authentication flow for tools.
+    -   Provides a settings page to configure the wake word, microphone, and speaker.
+    -   Uses Socket.IO to push real-time status, state, and dialogue updates to the browser.
 
 -   **`main.py`**: The main assistant loop.
     -   Connects to the `web_ui.py` server via a Socket.IO client.
-    -   **Wake Word**: Uses `pvporcupine` to listen for a wake word (e.g., "Jarvis").
-    -   **Transcription**: Captures microphone audio and transcribes it locally using **Picovoice Leopard** for fast, on-device performance.
-    -   **Command Handling (`command_handler.py`)**: Sends the transcribed text and conversation history to an OpenAI LLM.
+    -   **Wake Word (`wake_word_listener.py`)**: Uses `pvporcupine` to listen for a wake word (e.g., "Jarvis").
+    -   **Audio Input (`audio_in.py`)**: Uses `webrtcvad` for Voice Activity Detection to determine when the user has finished speaking, then transcribes the captured audio using **Picovoice Leopard** for fast, on-device performance.
+    -   **Command Handling (`command_handler.py`)**: Sends the transcribed text and conversation history to an OpenAI LLM to get a response or a tool call.
     -   **Text-to-Speech (`speak.py`)**: Synthesizes the LLM's response into audio using **ElevenLabs**.
-    -   **Crash Resilience**: Automatically restarts its main loop upon encountering an error.
 
--   **`tools.py`**: A collection of functions the LLM can call to interact with the outside world.
-    -   `search_web`: Searches the web with DuckDuckGo.
-    -   `get_all_upcoming_events`: Fetches Google Calendar events.
-    -   `search_contacts`: Fuzzy-searches Google Contacts.
-    -   `create_email_draft`, `send_email`: Manages Gmail.
-    -   `navigate_ui`: Sends a command via Socket.IO to change the active tab in the web UI.
+-   **`tools/`**: A directory containing the assistant's tools.
+    -   Each tool is a separate `.py` file containing a `run()` function and a `description` variable.
+    -   The `__init__.py` file dynamically loads all tools, making them available to the `command_handler`.
+    -   This modular design allows for easy extension. The assistant can even create new tools for itself using the `create_new_tool` function.
 
--   **`socket_client.py`**: A shared Socket.IO client instance to prevent circular import errors between `main.py` and `tools.py`.
+-   **`socket_client.py`**: A shared Socket.IO client instance used by `main.py` and other components to communicate with the `web_ui.py` server.
 
--   **`templates/index.html`**: A single-page application that serves as the frontend.
-    -   Displays the assistant's status (running/stopped) and the currently selected voice.
-    -   Provides a UI to select and save an ElevenLabs voice (`settings.json`).
-    -   Handles the Google authentication process.
-    -   Receives real-time updates and navigation commands from the backend via Socket.IO.
+-   **`templates/home.html`**: The main page of the web UI.
+    -   Displays the assistant's status (running/stopped) and state (listening, processing, speaking).
+    -   Provides a button to start/stop the assistant.
+    -   Shows a real-time transcript of the conversation between the user and the AI.
+    -   Links to the settings page.
 
--   **`database.py`**: Logs all conversations to a Supabase PostgreSQL database for history and analysis.
+-   **`database.py`**: Logs all conversations to a local SQLite database for history and analysis.
 
 ---
 
@@ -93,6 +89,7 @@ graph TD
 ### 1. Prerequisites
 - Python 3.9+
 - An internet connection
+- For voice I/O: a microphone and speakers
 
 ### 2. Clone the repository and install dependencies:
 ```bash
@@ -104,7 +101,7 @@ pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables
-Create a `.env` file in the project root and add the following keys. You can get these from their respective services.
+Create a `.env` file in the project root and add the following keys.
 
 ```env
 # OpenAI for the language model
@@ -112,17 +109,14 @@ OPENAI_API_KEY="sk-..."
 
 # ElevenLabs for Text-to-Speech
 ELEVEN_API_KEY="..."
-VOICE_NAME="..." # Optional: Default voice ID
 
 # Picovoice for on-device wake-word and transcription
 PICOVOICE_ACCESS_KEY="..."
-
-# Supabase for logging conversations (Optional)
-SUPABASE_URL="..."
-SUPABASE_KEY="..."
 ```
 
-### 4. Google Authentication
+### 4. Google Authentication (Optional, for Google Tools)
+If you want to use tools that interact with Google services (like Calendar), you must authenticate.
+
 1.  Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2.  Create a new project.
 3.  Enable the **Google Calendar API**, **Gmail API**, and **People API**.
@@ -134,25 +128,43 @@ SUPABASE_KEY="..."
 
 ## How to Run
 
-1.  **Start the Web UI and Process Manager**:
+1.  **Start the Web UI**:
     ```bash
     python web_ui.py
     ```
     This will start the Flask server. Open your browser to `http://127.0.0.1:5001`.
 
-2.  **Authenticate with Google**:
-    -   Navigate to the "Auth" tab in the web UI.
-    -   Click the "Sign in with Google" button and complete the OAuth flow. A `google_token.json` file will be created.
+2.  **Configure Settings**:
+    - Click the settings icon in the top right.
+    - Set your desired wake word (e.g., "jarvis").
+    - Select your microphone and speaker devices from the dropdowns and save.
 
-3.  **Start the Assistant**:
-    -   Click the microphone button in the header of the web UI. This will start the `main.py` assistant process in the background. The button will turn green to indicate it's running.
+3.  **Authenticate with Google (if needed)**:
+    - On the settings page, click the "Sign in with Google" button and complete the OAuth flow. A `token.json` file will be created.
 
-4.  **Talk to the Assistant**:
-    -   Say the wake word (e.g., "Jarvis").
-    -   After the activation sound, speak your command.
-    -   The assistant will process the command and respond with voice.
+4.  **Start the Assistant**:
+    -   Navigate back to the home page.
+    -   Click the large microphone button. It will turn green to indicate the assistant is running and listening for the wake word.
 
-You can stop the assistant at any time by clicking the microphone button again.
+5.  **Talk to the Assistant**:
+    -   Say the wake word.
+    -   The UI will update to show "Listening...". Speak your command.
+    -   The conversation will appear in real-time on the screen.
+
+You can stop the assistant at any time by clicking the large button again.
+
+---
+
+## Creating a New Tool
+
+The assistant can create new tools for itself. The process is as follows:
+
+1.  **Request**: Ask the assistant to create a new tool. For example: "Create a tool that tells me a joke."
+2.  **Execution**: The assistant will use the `create_new_tool` function. This function writes a new Python file into the `tools/` directory (e.g., `tools/tell_joke.py`).
+3.  **Structure**: The new file will contain:
+    - A `description` variable explaining what the tool does.
+    - A `run()` function that implements the tool's logic.
+4.  **Activation**: The assistant will automatically detect and load the new tool on its next restart, making it immediately available for use.
 
 ---
 

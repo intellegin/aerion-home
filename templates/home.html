@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AERION HOME - Assistant Control</title>
+    <title>AERION</title>
     <style>
         /* Basic styles */
         body { 
@@ -34,6 +34,8 @@
             flex-direction: column; 
             align-items: center; 
             gap: 20px; 
+            width: 90%;
+            max-width: 500px; /* Limit width for larger screens */
         }
         .voice-display { 
             font-size: 16px; 
@@ -47,16 +49,17 @@
             background-color: #f0f0f0; 
             border: 2px solid #ccc;
             border-radius: 50%; 
-            width: 100px; /* Larger button */
+            width: 100px;
             height: 100px; 
             display: flex; 
             align-items: center; 
             justify-content: center; 
             cursor: pointer; 
             transition: background-color 0.3s, border-color 0.3s;
+            padding: 0; /* Reset padding */
         }
         .controls #toggle-btn svg {
-            width: 48px; /* Larger icon */
+            width: 48px;
             height: 48px;
             stroke: #555;
             transition: stroke 0.3s;
@@ -75,14 +78,58 @@
         .controls #toggle-btn.stopped svg {
             stroke: #dc3545;
         }
+
+        /* Dialogue Box Styles */
+        #dialogue-container {
+            width: 100%;
+            display: none; /* Hide by default */
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .dialogue-box {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 5px 0;
+            border: none;
+            background-color: transparent;
+            box-sizing: border-box;
+            font-size: 16px;
+            color: #444;
+            text-align: left;
+            min-height: 28px; /* Adjusted height */
+        }
+        .dialogue-icon {
+            flex-shrink: 0;
+        }
+        .dialogue-icon svg {
+            width: 22px;
+            height: 22px;
+            stroke: #555;
+            stroke-width: 1.5;
+        }
+        #user-speech::before,
+        #ai-speech::before {
+            content: none; /* Remove the text prefixes */
+        }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
     <a href="{{ url_for('settings') }}" class="settings-link" title="Go to Settings">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-settings"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
     </a>
     <div class="controls">
+        <h1 id="greeting" style="font-weight: 500; margin-bottom: 10px; color: #333;">
+            {% if auth_status.status == 'authenticated' and auth_status.name %}
+                Hi, {{ auth_status.name.split(' ')[0] }}!
+            {% else %}
+                Hello!
+            {% endif %}
+        </h1>
         <button id="toggle-btn" title="Toggle Assistant Status">
             <svg id="mic-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -92,15 +139,35 @@
             </svg>
         </button>
         <span id="current-voice-display" class="voice-display"></span>
+        <span id="wake-word-display" class="voice-display" style="font-style: normal; font-size: 14px;"></span>
+        
+        <!-- Real-time Dialogue Box -->
+        <div id="dialogue-container">
+            <div id="user-speech" class="dialogue-box">
+                <span class="dialogue-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </span>
+                <span id="user-text"></span>
+            </div>
+            <div id="ai-speech" class="dialogue-box">
+                <span class="dialogue-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+                </span>
+                <span id="ai-text"></span>
+            </div>
+        </div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const toggleBtn = document.getElementById('toggle-btn');
             const voiceDisplay = document.getElementById('current-voice-display');
+            const wakeWordDisplay = document.getElementById('wake-word-display');
+            const userTextBox = document.getElementById('user-text');
+            const aiTextBox = document.getElementById('ai-text');
+            const dialogueContainer = document.getElementById('dialogue-container');
             let currentState = 'stopped';
 
-            // Socket.IO connection
             const socket = io();
             socket.on('connect', () => {
                 console.log('Connected to Socket.IO server!');
@@ -110,8 +177,35 @@
                 console.log('Status update received:', data);
                 updateStatus(data);
             });
+            
+            // New listeners for dialogue
+            socket.on('final_transcription', function(data) {
+                console.log("Final transcription:", data.text);
+                userTextBox.textContent = data.text;
+                aiTextBox.textContent = ''; // Clear AI box when user speaks
+            });
 
-            // Assistant status and control
+            socket.on('ai_speech_update', function(data) {
+                console.log("AI speech:", data.text);
+                dialogueContainer.style.display = 'flex'; // Show container
+                aiTextBox.textContent = data.text;
+            });
+
+            socket.on('assistant_state_update', function(data) {
+                // Clear boxes when assistant is idle or just listening
+                if (data.state === 'idle') {
+                     setTimeout(() => {
+                        userTextBox.textContent = '';
+                        aiTextBox.textContent = '';
+                        dialogueContainer.style.display = 'none'; // Hide container
+                    }, 1000); // Add a small delay before clearing
+                } else if (data.state === 'listening') {
+                    dialogueContainer.style.display = 'flex'; // Show for '...'
+                    userTextBox.textContent = 'Listening...';
+                    aiTextBox.textContent = '';
+                }
+            });
+
             function updateStatus(data) {
                 currentState = data.status;
                 if (currentState === 'running') {
@@ -122,14 +216,25 @@
                     toggleBtn.classList.add('stopped');
                     toggleBtn.classList.remove('running');
                     toggleBtn.title = 'Assistant is Stopped (Click to Start)';
+                    // Clear and hide dialogue on stop
+                    userTextBox.textContent = '';
+                    aiTextBox.textContent = '';
+                    dialogueContainer.style.display = 'none';
                 }
 
-                // Update voice display
                 if (voiceDisplay && data.voice_name) {
                     if (data.status === 'running' && data.voice_name !== 'Unknown' && data.voice_name !== 'Default') {
                         voiceDisplay.textContent = 'Using voice: ' + data.voice_name;
                     } else {
-                        voiceDisplay.textContent = ''; // Clear if stopped or unknown
+                        voiceDisplay.textContent = '';
+                    }
+                }
+
+                if (wakeWordDisplay && data.wake_word) {
+                    if (data.status === 'running') {
+                        wakeWordDisplay.textContent = `Say "${data.wake_word}"`;
+                    } else {
+                        wakeWordDisplay.textContent = '';
                     }
                 }
             }
@@ -139,7 +244,7 @@
                 fetch(endpoint, { method: 'POST' });
             });
 
-            // The initial status is sent by the server on connect.
+            // Initial status is sent by the server on connect.
         });
     </script>
 </body>

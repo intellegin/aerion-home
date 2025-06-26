@@ -7,9 +7,9 @@ from config import SUPABASE_URL, SUPABASE_KEY
 supabase: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
-        # Strip any whitespace from the credentials and aggressively remove newlines from the key.
-        url = SUPABASE_URL.strip()
-        key = SUPABASE_KEY.splitlines()[0]
+        # Strip whitespace and remove potential quotes from the credentials.
+        url = SUPABASE_URL.strip().strip("'\"")
+        key = SUPABASE_KEY.strip().strip("'\"")
 
         supabase = create_client(url, key)
         
