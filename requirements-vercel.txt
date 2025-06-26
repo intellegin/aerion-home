@@ -7,4 +7,17 @@ google-api-python-client==2.130.0
 google-auth-oauthlib==1.2.0
 google-auth-httplib2
 elevenlabs
-urllib3<2.0 
+urllib3<2.0
+
+# Dependencies for the assistant logic
+openai
+python-dotenv==1.0.1
+supabase==2.5.0
+thefuzz==0.22.1
+pytz==2024.1
+duckduckgo-search
+# The following are for audio processing on the server, which might be needed
+pvleopard==2.0.1
+numpy==1.26.4
+webrtcvad==2.0.10
+pvporcupine==3.0.2 
