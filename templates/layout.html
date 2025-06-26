@@ -74,16 +74,17 @@
                 <img src="{{ auth_status.picture if auth_status.picture else url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
             {% else %}
                 <div class="user-info">
-                     <span class="name">Guest</span>
+                     <span class="name">Login</span>
                 </div>
-                <img src="{{ url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
             {% endif %}
         </a>
     </header>
     
     <nav class="nav">
         <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">Settings</a>
+        {% if auth_status and auth_status.status == 'authenticated' %}
         <a href="{{ url_for('files') }}" class="{{ 'active' if request.endpoint == 'files' else '' }}">Project Files</a>
+        {% endif %}
     </nav>
 
     <div class="content">

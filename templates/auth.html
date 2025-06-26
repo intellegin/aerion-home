@@ -69,9 +69,18 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         fetch('/api/google/logout', { method: 'POST' })
-            .then(() => {
-                loadAuthStatus(); // Refresh the auth status display
-                alert('Successfully logged out.');
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Successfully logged out.');
+                    window.location.href = '/'; // Redirect to home page
+                } else {
+                    alert('Logout failed. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Error during logout:', error);
+                alert('An error occurred during logout.');
             });
     }
 

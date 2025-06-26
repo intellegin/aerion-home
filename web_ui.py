@@ -62,6 +62,11 @@ def index():
 @app.route('/files')
 def files():
     """Page for viewing and editing project files."""
+    auth_status = google_auth_helper.get_auth_status()
+    if not auth_status or auth_status.get('status') != 'authenticated':
+        flash('You must be logged in to view project files.', 'error')
+        return redirect(url_for('index'))
+
     editable_files = get_editable_files()
     return render_template('files.html', files=editable_files)
 
@@ -78,6 +83,11 @@ def auth():
 @app.route('/view/<filename>')
 def view_file(filename):
     """Read-only view for a file."""
+    auth_status = google_auth_helper.get_auth_status()
+    if not auth_status or auth_status.get('status') != 'authenticated':
+        flash('You must be logged in to view project files.', 'error')
+        return redirect(url_for('index'))
+        
     if os.path.splitext(filename)[1] not in ALLOWED_EXTENSIONS:
         flash(f"Error: '{filename}' is not a viewable file type.", 'error')
         return redirect(url_for('files'))
