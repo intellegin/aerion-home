@@ -1,6 +1,7 @@
 import os
 import json
 from typing import Optional
+from flask import session # Import session
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
@@ -17,8 +18,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
 ]
 SCOPES.sort() # Sort scopes to ensure consistent order
-TOKEN_FILE = 'token.json'
-CREDENTIALS_FILE = 'credentials.json'
+CREDENTIALS_FILE = 'credentials.json' # Still needed for local fallback
 
 def get_google_flow(redirect_uri: str) -> Flow:
     """
@@ -60,14 +60,15 @@ def get_auth_url(redirect_uri: str) -> str:
 def process_auth_callback(code: str, redirect_uri: str) -> bool:
     """
     Processes the authentication callback from Google, fetches the token,
-    and saves the credentials.
+    and saves the credentials to the user's session.
     """
     try:
         flow = get_google_flow(redirect_uri)
         flow.fetch_token(code=code)
         creds = flow.credentials
-        with open(TOKEN_FILE, 'w') as token_file:
-            token_file.write(creds.to_json())
+        
+        # Instead of saving to a file, save to the session cookie
+        session['google_credentials'] = json.loads(creds.to_json())
         return True
     except Exception as e:
         print(f"Error processing auth callback: {e}")
@@ -75,23 +76,23 @@ def process_auth_callback(code: str, redirect_uri: str) -> bool:
 
 def get_credentials() -> Optional[Credentials]:
     """
-    Gets user credentials from the stored token file.
+    Gets user credentials from the session.
     Refreshes the token if it's expired.
     """
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    creds_info = session.get('google_credentials')
+    if not creds_info:
+        return None
+
+    creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
     
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            # Save the refreshed credentials
-            with open(TOKEN_FILE, 'w') as token:
-                token.write(creds.to_json())
+            # Save the refreshed credentials back to the session
+            session['google_credentials'] = json.loads(creds.to_json())
         except Exception as e:
             print(f"Error refreshing token: {e}")
-            # If refresh fails, credentials are no longer valid.
-            revoke_auth() # Delete the bad token file
+            revoke_auth() # Clear the bad credentials from the session
             return None
             
     return creds
@@ -113,13 +114,12 @@ def get_auth_status() -> dict:
             }
         except Exception as e:
             print(f"Error fetching user info: {e}")
-            # If fetching user info fails, treat as unauthenticated
             return {"status": "unauthenticated", "error": str(e)}
     return {"status": "unauthenticated"}
 
 def revoke_auth() -> bool:
-    """Revokes access by deleting the token file."""
-    if os.path.exists(TOKEN_FILE):
-        os.remove(TOKEN_FILE)
+    """Revokes access by clearing the credentials from the session."""
+    if 'google_credentials' in session:
+        session.pop('google_credentials', None)
         return True
     return False 

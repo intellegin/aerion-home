@@ -3,7 +3,6 @@
 
 # Google Cloud credentials
 credentials.json
-token.json
 
 # Python cache
 __pycache__/
@@ -32,5 +31,4 @@ build/
 
 # Generated files
 *.pyc
-token.json
 client_secret.json 
