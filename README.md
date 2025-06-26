@@ -170,6 +170,7 @@ This deployment is best for previewing the web interface or using it as a settin
 1.  **Fork this repository** and connect it to your Vercel account.
 
 2.  **Configure Environment Variables** in your Vercel project settings. You will need:
+    -   `SERVER_NAME`: The domain of your Vercel app (e.g., `aerion-home.vercel.app`).
     -   `OPENAI_API_KEY`
     -   `ELEVEN_API_KEY`
     -   `PICOVOICE_ACCESS_KEY`

@@ -11,6 +11,7 @@ from speak import get_elevenlabs_voices, DEFAULT_VOICE # Import the new function
 import google_auth as google_auth_helper # Import the new auth module
 
 app = Flask(__name__)
+app.config['SERVER_NAME'] = os.environ.get('SERVER_NAME')
 CORS(app)
 app.secret_key = 'super_secret_key_for_flashing' # Required for flashing messages
 socketio = SocketIO(app, cors_allowed_origins="*")
