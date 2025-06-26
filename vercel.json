@@ -6,7 +6,7 @@
             "use": "@vercel/python",
             "config": {
                 "maxLambdaSize": "40mb",
-                "installCommand": "bash build_vercel.sh && pip install -r requirements.txt"
+                "installCommand": "bash build_vercel.sh && pip install -r requirements.txt && echo '--- INSTALLED PACKAGES ---' && pip list && echo '--- PACKAGE SIZES ---' && pip list --format=freeze | xargs -n 1 pip show | grep -E '^(Name|Location)' | paste - - | awk '{print $2, $4}' | xargs -n 2 du -sh | sort -rh && echo '--- END SIZES ---'"
             }
         }
     ],
