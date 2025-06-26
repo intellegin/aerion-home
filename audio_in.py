@@ -18,6 +18,7 @@ import os
 import tempfile
 from typing import Optional
 import io
+import wave
 
 import numpy as np  # type: ignore
 import sounddevice as sd  # type: ignore
@@ -203,4 +204,49 @@ def capture_and_transcribe(max_seconds: float = 15.0) -> str:
     
     # Use the new on-device transcription
     from transcribe_leopard import transcribe_with_leopard
-    return transcribe_with_leopard(audio_data) 
+    return transcribe_with_leopard(audio_data)
+
+
+class Transcriber:
+    """A wrapper for the OpenAI Whisper API for server-side processing."""
+    def __init__(self):
+        self.client = OpenAI()
+
+    def transcribe_audio(self, audio_bytes: bytes) -> str:
+        """
+        Transcribes raw PCM audio data by first wrapping it in a WAV container,
+        then sending it to the Whisper API.
+
+        :param audio_bytes: The raw 16-bit 16kHz mono PCM audio data.
+        :return: The transcribed text, or an empty string on failure.
+        """
+        if not audio_bytes or len(audio_bytes) < 1000: # Basic check for empty/trivial audio
+            print("Audio data is empty or too short to transcribe.")
+            return ""
+
+        print(f"Transcribing {len(audio_bytes)} bytes of audio via Whisper API...")
+        
+        try:
+            # Create a proper WAV file in memory to send to the API
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, 'wb') as wf:
+                wf.setnchannels(1)      # Mono
+                wf.setsampwidth(2)      # 16-bit PCM
+                wf.setframerate(16000)  # 16kHz sample rate
+                wf.writeframes(audio_bytes)
+            
+            wav_buffer.name = "input.wav"
+            wav_buffer.seek(0)
+
+            # Send the in-memory WAV file to the Whisper API
+            transcript = self.client.audio.transcriptions.create(
+                model="whisper-1",
+                file=wav_buffer,
+                language="en"
+            )
+            print(f"Transcription result: '{transcript.text}'")
+            return transcript.text
+        except Exception as e:
+            # This could be an API error, an issue with the audio data, etc.
+            print(f"An error occurred during transcription: {e}")
+            return "" 

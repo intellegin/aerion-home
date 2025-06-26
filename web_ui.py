@@ -4,6 +4,7 @@ import sys
 import atexit
 import json
 import time
+import threading
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -239,7 +240,22 @@ def google_logout():
     success = google_auth_helper.revoke_auth()
     return jsonify({'status': 'success' if success else 'failure'})
 
+def silence_checker_thread():
+    """
+    Periodically checks if the assistant should process a command due to silence.
+    """
+    while True:
+        try:
+            assistant.check_for_silence()
+        except Exception as e:
+            print(f"Error in silence checker thread: {e}")
+        time.sleep(0.5) # Check every 500ms
+
 if __name__ == '__main__':
+    # Start the background thread for silence detection
+    checker_thread = threading.Thread(target=silence_checker_thread, daemon=True)
+    checker_thread.start()
+
     print("Starting Flask web UI with integrated assistant...")
     print("Open your browser and go to http://127.0.0.1:5001")
     # We no longer start a separate thread for the assistant.

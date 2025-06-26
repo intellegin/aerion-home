@@ -159,19 +159,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 micBtn.title = 'Start Assistant';
                 statusIndicator.textContent = 'Click the mic to start';
                 break;
-            case 'LISTENING_FOR_WAKE_WORD':
-                isAssistantActive = true;
-                micBtn.classList.add('active');
-                micBtn.title = 'Listening for wake word...';
-                statusIndicator.textContent = 'Listening for "Computer"...';
-                break;
-            case 'LISTENING_FOR_COMMAND':
+            case 'LISTENING':
                 isAssistantActive = true;
                 micBtn.classList.add('active', 'listening');
                 micBtn.title = 'Listening for your command...';
                 statusIndicator.textContent = 'I\'m listening...';
                 break;
-            case 'PROCESSING_COMMAND':
+            case 'PROCESSING':
                 isAssistantActive = true;
                 micBtn.classList.add('active');
                 micBtn.title = 'Processing your command...';

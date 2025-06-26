@@ -5,44 +5,38 @@ import threading
 from enum import Enum, auto
 
 from command_handler import handle_command, SYSTEM_PROMPT, RestartRequest
-from audio_in import VAD, Transcriber, AudioRecorder
+from audio_in import Transcriber # Use our new, lean transcriber
 from speak import speak_async, stop_speaking
-from wake_word_listener import PorcupineListener
 from database import log_message, create_chat_session
 
-
+# The new, simpler state machine for the web UI
 class AssistantState(Enum):
     """Represents the current state of the assistant."""
-    IDLE = auto()               # Doing nothing, waiting to be started
-    LISTENING_FOR_WAKE_WORD = auto()
-    LISTENING_FOR_COMMAND = auto()
-    PROCESSING_COMMAND = auto()
-    SPEAKING = auto()
+    IDLE = auto()               # Not active
+    LISTENING = auto()          # Actively listening for a command
+    PROCESSING = auto()         # Transcribing and thinking
+    SPEAKING = auto()           # Replying to the user
 
 
 class Assistant:
     """
-    The core logic of the voice assistant.
-    This class is responsible for the main state machine and processing audio.
+    The core logic of the voice assistant, refactored for a web-based,
+    serverless environment.
     """
+    LISTENING_TIMEOUT_SEC = 10.0 # Timeout if no speech is ever detected
+    SILENCE_THRESHOLD_SEC = 2.0  # How long of a pause indicates the end of a command
 
     def __init__(self, on_state_change=None):
         self.state = AssistantState.IDLE
-        self.recorder = AudioRecorder()
-        self.vad = VAD()
-        self.wake_word_detector = PorcupineListener(
-            on_detection=self._on_wake_word_detected,
-            keywords=["computer"]
-        )
         self.transcriber = Transcriber()
-        self.on_state_change = on_state_change  # Callback to notify UI of state changes
+        self.on_state_change = on_state_change
         
         # Conversation state
         self.session_id = None
         self.conversation_history = []
         self._command_audio_buffer = [] # Buffer for storing command audio
-        self._speech_started = False
-        self._last_speech_time = None
+        self._last_audio_time = None
+        self._speaking_thread = None
     
     def _set_state(self, new_state: AssistantState):
         """Updates the assistant's state and notifies the UI."""
@@ -53,81 +47,59 @@ class Assistant:
         if self.on_state_change:
             self.on_state_change(self.state)
 
-        # Reset buffers and timers when entering a listening state
-        if new_state == AssistantState.LISTENING_FOR_COMMAND:
+        # Reset buffers and timers when we start listening
+        if new_state == AssistantState.LISTENING:
             self._command_audio_buffer = []
-            self._speech_started = False
-            self._last_speech_time = time.time() # Start timer to detect timeout
+            self._last_audio_time = time.time()
 
     def start(self):
-        """Starts the assistant by listening for the wake word."""
+        """Starts the assistant by listening for a command."""
         if self.state != AssistantState.IDLE:
             return
-        self._set_state(AssistantState.LISTENING_FOR_WAKE_WORD)
-
-    def stop(self):
-        """Stops the assistant and returns it to the idle state."""
-        self._set_state(AssistantState.IDLE)
-
-    def _on_wake_word_detected(self):
-        """Callback executed when the wake word is detected."""
-        if self.state != AssistantState.LISTENING_FOR_WAKE_WORD:
-            return
-        print("✅ Wake word detected.")
+        
         self.session_id = int(time.time())
         create_chat_session(self.session_id)
         self.conversation_history = [SYSTEM_PROMPT]
-        self._set_state(AssistantState.LISTENING_FOR_COMMAND)
+        self._set_state(AssistantState.LISTENING)
+
+    def stop(self):
+        """Stops the assistant and returns it to the idle state."""
+        if self._speaking_thread and self._speaking_thread.is_alive():
+            stop_speaking()
+        self._set_state(AssistantState.IDLE)
 
     def process_audio_chunk(self, audio_chunk):
+        """Processes an audio chunk from the browser, managing the conversation state."""
+        if self.state != AssistantState.LISTENING:
+            return # Only process audio when in the listening state
+
+        self._last_audio_time = time.time()
+        self._command_audio_buffer.append(audio_chunk)
+
+    def check_for_silence(self):
         """
-        This is the main entry point for audio data from the browser.
-        It manages the state machine for the conversation.
+        Periodically called by the server to check if the user has stopped speaking.
         """
-        if self.state == AssistantState.IDLE:
-            return # Do nothing if we're not active
-
-        elif self.state == AssistantState.LISTENING_FOR_WAKE_WORD:
-            self.wake_word_detector.process(audio_chunk)
+        if self.state != AssistantState.LISTENING:
+            return
         
-        elif self.state == AssistantState.LISTENING_FOR_COMMAND:
-            self._handle_command_audio(audio_chunk)
+        silence_duration = time.time() - self._last_audio_time
         
-        elif self.state == AssistantState.SPEAKING:
-            # While speaking, we can listen for barge-in
-            self._handle_barge_in(audio_chunk)
-
-    def _handle_command_audio(self, audio_chunk):
-        """Processes audio when listening for a user's command."""
-        is_speech = self.vad.is_speech(audio_chunk)
-        
-        # If we detect speech, start buffering
-        if is_speech:
-            self._speech_started = True
-            self._last_speech_time = time.time()
-            self._command_audio_buffer.append(audio_chunk)
-
-        # If we have started capturing speech and then there's a silence
-        elif self._speech_started and not is_speech:
-            silence_duration = time.time() - self._last_speech_time
-            if silence_duration > self.vad.silence_threshold_sec:
-                print("Silence detected, processing command...")
-                self._process_command()
-
-        # Timeout logic: if no speech is detected for a while
-        elif not self._speech_started:
-            if time.time() - self._last_speech_time > 10.0: # 10-second timeout
-                print("No command detected, returning to wake word listening.")
-                self._set_state(AssistantState.LISTENING_FOR_WAKE_WORD)
+        # If there's a long enough pause, process the command
+        if self._command_audio_buffer and silence_duration > self.SILENCE_THRESHOLD_SEC:
+            print(f"Silence detected ({silence_duration:.2f}s). Processing command...")
+            self._process_command()
+        # If there's been no audio at all for the max duration, time out
+        elif not self._command_audio_buffer and silence_duration > self.LISTENING_TIMEOUT_SEC:
+            print("Listening timed out. Returning to IDLE.")
+            self.stop()
 
     def _process_command(self):
         """Transcribes and handles the buffered command audio."""
         if not self._command_audio_buffer:
-            print("Process command called with no audio, returning to wake word listening.")
-            self._set_state(AssistantState.LISTENING_FOR_WAKE_WORD)
             return
 
-        self._set_state(AssistantState.PROCESSING_COMMAND)
+        self._set_state(AssistantState.PROCESSING)
         
         full_audio_data = b"".join(self._command_audio_buffer)
         self._command_audio_buffer = [] # Clear buffer
@@ -135,8 +107,8 @@ class Assistant:
         user_input = self.transcriber.transcribe_audio(full_audio_data)
 
         if not user_input or not user_input.strip():
-            print("… Transcription was empty. Listening for wake word again.")
-            self._set_state(AssistantState.LISTENING_FOR_WAKE_WORD)
+            print("… Transcription was empty. Returning to listening.")
+            self._set_state(AssistantState.LISTENING)
             return
 
         log_message(session_id=self.session_id, content=user_input, direction="outbound")
@@ -146,15 +118,15 @@ class Assistant:
             response = handle_command(user_input, self.conversation_history)
         except RestartRequest:
             print("Restart requested. For now, just going back to idle.")
-            self.stop() # Or handle restart more gracefully
+            self.stop() 
             return
         except Exception as e:
             print(f"Error in command handling: {e}")
             response = "I'm sorry, I encountered an error. Please try again."
 
         if not response:
-            print("LLM returned no response. Listening for wake word.")
-            self._set_state(AssistantState.LISTENING_FOR_WAKE_WORD)
+            print("LLM returned no response. Returning to listening.")
+            self._set_state(AssistantState.LISTENING)
             return
         
         log_message(session_id=self.session_id, content=response, direction="inbound")
@@ -166,23 +138,16 @@ class Assistant:
         """Handles the text-to-speech part of the response."""
         self._set_state(AssistantState.SPEAKING)
         
-        # We run TTS in a separate thread so the main thread (Socket.IO) isn't blocked.
-        # This thread will transition the state back to listening when it's done.
         def speak_and_return_to_listen():
+            # Stop any previous speech just in case
+            stop_speaking() 
             speaking_thread = speak_async(text)
             if speaking_thread:
-                speaking_thread.join() # Wait for speech to finish
+                speaking_thread.join()
             
-            # Check if state is still SPEAKING (i.e., not interrupted by barge-in)
+            # After speaking, go back to idle. The user can click the button to talk again.
             if self.state == AssistantState.SPEAKING:
-                 self._set_state(AssistantState.LISTENING_FOR_WAKE_WORD)
+                 self.stop()
 
-        threading.Thread(target=speak_and_return_to_listen).start()
-
-    def _handle_barge_in(self, audio_chunk):
-        """Listens for user speech while the assistant is talking."""
-        if self.vad.is_speech(audio_chunk):
-            print("Barge-in detected!")
-            stop_speaking() # Stop the currently playing TTS
-            # Immediately transition to listening for the next command
-            self._set_state(AssistantState.LISTENING_FOR_COMMAND) 
+        self._speaking_thread = threading.Thread(target=speak_and_return_to_listen)
+        self._speaking_thread.start() 
