@@ -133,6 +133,18 @@ async def main(web_ui_socket_port=None):
             print(f"Error validating microphone device ID {mic_device_id}: {e}. Falling back to default.")
             mic_device_id = None
 
+    # --- Validate Speaker Device ---
+    if speaker_device_id is not None:
+        try:
+            import sounddevice as sd
+            device_info = sd.query_devices(speaker_device_id)
+            if device_info['max_output_channels'] == 0:
+                print(f"Warning: Device ID {speaker_device_id} ('{device_info['name']}') is not an output device. Falling back to default.")
+                speaker_device_id = None
+        except Exception as e:
+            print(f"Error validating speaker device ID {speaker_device_id}: {e}. Falling back to default.")
+            speaker_device_id = None
+
     # Create a callback that includes the speaker_device_id
     on_detection_callback = partial(on_wake_word_detected, speaker_device_id=speaker_device_id)
 

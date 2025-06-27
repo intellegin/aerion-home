@@ -14,6 +14,7 @@
             min-height: 100vh; 
             margin: 0; 
             background-color: #f4f4f9; 
+            padding-bottom: 100px; /* Add padding to avoid overlap with fixed dialogue */
         }
         .settings-link {
             position: absolute;
@@ -72,20 +73,43 @@
             stroke: #28a745;
         }
         .controls #toggle-btn.stopped {
-            background-color: #ffeeee;
-            border-color: #dc3545;
+            background-color: #e9ecef;
+            border-color: #adb5bd;
         }
         .controls #toggle-btn.stopped svg {
-            stroke: #dc3545;
+            stroke: #6c757d;
+        }
+        .controls #toggle-btn.listening {
+            background-color: #e6ffed;
+            border-color: #28a745;
+        }
+        .controls #toggle-btn.listening svg {
+            stroke: #28a745;
+        }
+        .controls #toggle-btn.conversing {
+            background-color: #e0f2ff;
+            border-color: #007bff;
+        }
+        .controls #toggle-btn.conversing svg {
+            stroke: #007bff;
         }
 
         /* Dialogue Box Styles */
         #dialogue-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             width: 100%;
+            background-color: #ffffff;
+            border-top: 1px solid #ddd;
+            padding: 15px;
             display: none; /* Hide by default */
             flex-direction: column;
             gap: 10px;
-            margin-top: 15px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            max-width: 100%; /* Override max-width from .controls */
+            box-sizing: border-box; /* Ensure padding is included in width */
         }
         .dialogue-box {
             display: flex;
@@ -93,6 +117,8 @@
             justify-content: center;
             gap: 10px;
             width: 100%;
+            max-width: 800px; /* Max width for dialogue content */
+            margin: 0 auto; /* Center the dialogue box content */
             padding: 5px 0;
             border: none;
             background-color: transparent;
@@ -144,15 +170,9 @@
         <!-- Real-time Dialogue Box -->
         <div id="dialogue-container">
             <div id="user-speech" class="dialogue-box">
-                <span class="dialogue-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                </span>
                 <span id="user-text"></span>
             </div>
             <div id="ai-speech" class="dialogue-box">
-                <span class="dialogue-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
-                </span>
                 <span id="ai-text"></span>
             </div>
         </div>
@@ -192,7 +212,25 @@
             });
 
             socket.on('assistant_state_update', function(data) {
-                // Clear boxes when assistant is idle or just listening
+                const btn = document.getElementById('toggle-btn');
+                // Don't change color if the main state is 'stopped'
+                if (currentState === 'stopped') return;
+
+                btn.classList.remove('listening', 'conversing');
+                switch (data.state) {
+                    case 'listening':
+                    case 'idle':
+                        btn.classList.add('listening');
+                        btn.title = 'Assistant is Listening';
+                        break;
+                    case 'processing':
+                    case 'speaking':
+                        btn.classList.add('conversing');
+                        btn.title = 'Assistant is in a Conversation';
+                        break;
+                }
+                
+                // Handle text box content based on state
                 if (data.state === 'idle') {
                      setTimeout(() => {
                         userTextBox.textContent = '';
@@ -208,14 +246,16 @@
 
             function updateStatus(data) {
                 currentState = data.status;
+                const btn = document.getElementById('toggle-btn');
+                btn.classList.remove('running', 'stopped', 'listening', 'conversing');
+
                 if (currentState === 'running') {
-                    toggleBtn.classList.add('running');
-                    toggleBtn.classList.remove('stopped');
-                    toggleBtn.title = 'Assistant is Running (Click to Stop)';
+                    // When starting, default to listening state
+                    btn.classList.add('listening');
+                    btn.title = 'Assistant is Running (Click to Stop)';
                 } else {
-                    toggleBtn.classList.add('stopped');
-                    toggleBtn.classList.remove('running');
-                    toggleBtn.title = 'Assistant is Stopped (Click to Start)';
+                    btn.classList.add('stopped');
+                    btn.title = 'Assistant is Stopped (Click to Start)';
                     // Clear and hide dialogue on stop
                     userTextBox.textContent = '';
                     aiTextBox.textContent = '';

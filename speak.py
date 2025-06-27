@@ -280,33 +280,12 @@ def _speak_eleven_async(text: str, device_id: int | None) -> threading.Thread | 
     if not (os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY")):
         return None
 
-    # Check for either old or new SDK
-    try:
-        from elevenlabs.client import ElevenLabs as _ElevenLabsClient
-        sdk_v2_present = True
-    except ImportError:
-        sdk_v2_present = False
-    
-    if _eleven_generate is None and not sdk_v2_present:
-        return None
+    def _worker(text_to_speak: str, dev_id: int | None):
+        # This worker now calls the synchronous function, which has robust
+        # error handling for both v1 and v2 SDKs.
+        _speak_eleven_sync(text_to_speak, _current_voice(), device=dev_id)
 
-    # This is a bit of a workaround for the v0.x SDK
-    def _worker():
-        try:
-            # Validate the device
-            if device_id is not None:
-                try:
-                    sd.query_devices(device=device_id)
-                except ValueError:
-                    print(f"Warning: Output device ID {device_id} not found. Using default.")
-                    device_id = None
-
-            audio = _eleven_generate(text=text, voice=_current_voice())
-            _eleven_play(audio, device=str(device_id) if device_id is not None else None)
-        except Exception as e:
-            print(f"[ElevenLabs v1 TTS error] {e}")
-
-    thread = threading.Thread(target=_worker, daemon=True)
+    thread = threading.Thread(target=_worker, args=(text, device_id), daemon=True)
     thread.start()
     return thread
 
@@ -317,38 +296,28 @@ def _speak_eleven_async(text: str, device_id: int | None) -> threading.Thread | 
 
 def speak_async(text: str, device_id: int | None = None) -> threading.Thread | None:
     """
-    Synthesize and speak the given text in a background thread.
-    This function will select the best available TTS method.
-    It returns the thread so the caller can `join()` it if needed.
+    Speak text asynchronously using the best available TTS method.
+    This function returns the thread that is playing the audio, so it can be
+    joined by the caller.
     """
-    # Notify the UI that the AI is speaking and what it's saying
-    sio_instance.update_ai_speech(text)
+    # Prefer ElevenLabs if available
+    eleven_thread = _speak_eleven_async(text, device_id)
+    if eleven_thread:
+        return eleven_thread
 
-    # Prioritize ElevenLabs if the key is set
-    if os.getenv("ELEVEN_API_KEY") or os.getenv("ELEVENLABS_API_KEY"):
-        return _speak_eleven_async(text, device_id)
+    # Fallback to pyttsx3 for offline capability
+    pyttsx3_thread = _speak_pyttsx3_async(text)
+    if pyttsx3_thread:
+        return pyttsx3_thread
 
-    voice = _current_voice()
+    # Fallback to system commands for macOS and Linux
+    def _system_worker(text_to_speak):
+        if sys.platform == "darwin":
+            _speak_with_command_async(["say", text_to_speak], add_voice=True)
+        elif sys.platform.startswith("linux"):
+            _speak_with_command_async(["espeak", "-v", "en-us", text_to_speak])
 
-    # Priority 2: OpenAI if an OpenAI voice is selected
-    if voice in _OPENAI_VOICES:
-        def _worker():
-            _speak_openai_sync(text, voice, device=device_id)
-        
-        thread = threading.Thread(target=_worker, daemon=True)
-        thread.start()
-        return thread
-
-    # Priority 3: pyttsx3 for local, offline TTS
-    thread = _speak_pyttsx3_async(text)
-    if thread:
-        return thread
-
-    # Fallback to system commands
-    def _system_worker():
-        speak_sync(text)
-    
-    thread = threading.Thread(target=_system_worker, daemon=True)
+    thread = threading.Thread(target=_system_worker, args=(text,))
     thread.start()
     return thread
 
@@ -360,47 +329,51 @@ def speak_text(text: str) -> None:  # noqa: D401
 
 def play_activation_sound(device_id: int | None = None) -> None:
     """Plays a short activation sound in a background thread."""
-    def _worker():
+    def _worker(d_id: int | None):
         try:
-            # Validate the device
-            if device_id is not None:
-                try:
-                    sd.query_devices(device=device_id)
-                except ValueError:
-                    print(f"Warning: Output device ID {device_id} not found. Using default.")
-                    device_id = None
-
-            sound_file = os.path.join(os.path.dirname(__file__), "assets", "listening.wav")
-            data, fs = sf.read(sound_file, dtype='float32')
-            sd.play(data, fs, device=device_id)
+            import soundfile as sf
+            import sounddevice as sd
+            # Correctly reference the file from the script's directory
+            script_dir = os.path.dirname(__file__)
+            file_path = os.path.join(script_dir, 'audio', 'activation.wav')
+            
+            data, fs = sf.read(file_path, dtype='float32')
+            
+            # If device_id is provided, use it. Otherwise, use default.
+            if d_id is not None:
+                sd.play(data, fs, device=d_id)
+            else:
+                sd.play(data, fs) # Use default device
             sd.wait()
         except Exception as e:
             print(f"Could not play activation sound: {e}")
 
-    thread = threading.Thread(target=_worker, daemon=True)
+    thread = threading.Thread(target=_worker, args=(device_id,))
     thread.start()
 
 
 def play_deactivation_sound(device_id: int | None = None) -> None:
     """Plays a short deactivation sound in a background thread."""
-    def _worker():
+    def _worker(d_id: int | None):
         try:
-            # Validate the device
-            if device_id is not None:
-                try:
-                    sd.query_devices(device=device_id)
-                except ValueError:
-                    print(f"Warning: Output device ID {device_id} not found. Using default.")
-                    device_id = None
-
-            sound_file = os.path.join(os.path.dirname(__file__), "assets", "listening_off.wav")
-            data, fs = sf.read(sound_file, dtype='float32')
-            sd.play(data, fs, device=device_id)
+            import soundfile as sf
+            import sounddevice as sd
+            # Correctly reference the file from the script's directory
+            script_dir = os.path.dirname(__file__)
+            file_path = os.path.join(script_dir, 'audio', 'deactivation.wav')
+            
+            data, fs = sf.read(file_path, dtype='float32')
+            
+            # If device_id is provided, use it. Otherwise, use default.
+            if d_id is not None:
+                sd.play(data, fs, device=d_id)
+            else:
+                sd.play(data, fs) # Use default device
             sd.wait()
         except Exception as e:
             print(f"Could not play deactivation sound: {e}")
 
-    thread = threading.Thread(target=_worker, daemon=True)
+    thread = threading.Thread(target=_worker, args=(device_id,))
     thread.start()
 
 
