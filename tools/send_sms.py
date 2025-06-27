@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 from twilio.rest import Client
 
+TOOL_CATEGORY = "Communication"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

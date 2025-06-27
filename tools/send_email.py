@@ -2,6 +2,8 @@ import base64
 from email.mime.text import MIMEText
 from google_calendar import get_gmail_service
 
+TOOL_CATEGORY = "Google Suite"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

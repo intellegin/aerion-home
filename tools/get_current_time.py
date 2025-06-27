@@ -1,6 +1,8 @@
 from datetime import datetime
 import pytz
 
+TOOL_CATEGORY = "General"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

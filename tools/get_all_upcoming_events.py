@@ -2,6 +2,8 @@ import json
 from typing import Union
 from google_calendar import get_all_upcoming_events as fetch_events
 
+TOOL_CATEGORY = "Google Suite"
+
 def _get_user_timezone() -> Union[str, None]:
     """Reads the user's configured timezone from settings.json."""
     try:

@@ -1,6 +1,8 @@
 import json
 from .search_contacts import run as search_contacts_run
 
+TOOL_CATEGORY = "Google Suite"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

@@ -1,6 +1,8 @@
 import os
 import json
 
+TOOL_CATEGORY = "System"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

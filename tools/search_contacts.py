@@ -2,6 +2,8 @@ import json
 from google_calendar import get_people_service
 from thefuzz import process
 
+TOOL_CATEGORY = "Google Suite"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

@@ -13,7 +13,7 @@ from speak import get_elevenlabs_voices, DEFAULT_VOICE # Import the new function
 import google_auth as google_auth_helper # Import the new auth module
 import notion_auth as notion_auth_helper # Import the new Notion auth module
 import sounddevice as sd # Import the sounddevice library
-from tools import tools, _load_tools, sample_prompts # Import the loader and prompts
+from tools import tools, _load_tools, grouped_prompts # Import the new grouped prompts
 from audio_in import Transcriber # Corrected import path
 from command_handler import handle_command, conversation_history, SYSTEM_PROMPT
 
@@ -45,7 +45,7 @@ def inject_auth_status():
 @app.context_processor
 def inject_sample_prompts():
     """Injects sample prompts into all templates for the help modal."""
-    return dict(sample_prompts=sample_prompts)
+    return dict(grouped_prompts=grouped_prompts)
 
 # Cache for voices to avoid excessive API calls
 _voice_cache = None

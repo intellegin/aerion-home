@@ -7,6 +7,8 @@ from __future__ import annotations
 from notion_client import Client, APIResponseError
 import notion_auth
 
+TOOL_CATEGORY = "Notion"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

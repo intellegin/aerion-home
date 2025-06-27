@@ -1,6 +1,8 @@
 import json
 from duckduckgo_search import DDGS
 
+TOOL_CATEGORY = "General"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {

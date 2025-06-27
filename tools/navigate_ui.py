@@ -1,5 +1,7 @@
 from socket_client import sio_instance
 
+TOOL_CATEGORY = "System"
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {
