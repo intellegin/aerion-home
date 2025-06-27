@@ -290,9 +290,21 @@ def _speak_eleven_async(text: str, device_id: int | None) -> threading.Thread | 
     if _eleven_generate is None and not sdk_v2_present:
         return None
 
+    # This is a bit of a workaround for the v0.x SDK
     def _worker():
-        """Worker thread to call the synchronous speak method."""
-        _speak_eleven_sync(text, _current_voice(), device=device_id)
+        try:
+            # Validate the device
+            if device_id is not None:
+                try:
+                    sd.query_devices(device=device_id)
+                except ValueError:
+                    print(f"Warning: Output device ID {device_id} not found. Using default.")
+                    device_id = None
+
+            audio = _eleven_generate(text=text, voice=_current_voice())
+            _eleven_play(audio, device=str(device_id) if device_id is not None else None)
+        except Exception as e:
+            print(f"[ElevenLabs v1 TTS error] {e}")
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
@@ -342,61 +354,48 @@ def speak_async(text: str, device_id: int | None = None) -> threading.Thread | N
 
 
 def speak_text(text: str) -> None:  # noqa: D401
-    """DEPRECATED: Use speak_async for non-blocking or speak_sync for blocking."""
-    speak_sync(text)
+    """(Blocking) speaks a string using the best available TTS method."""
+    _speak_eleven_sync(text, _current_voice())
 
 
 def play_activation_sound(device_id: int | None = None) -> None:
-    """
-    Plays a short, non-blocking activation sound.
-    """
+    """Plays a short activation sound in a background thread."""
     def _worker():
         try:
-            import numpy as np
-            import sounddevice as sd
+            # Validate the device
+            if device_id is not None:
+                try:
+                    sd.query_devices(device=device_id)
+                except ValueError:
+                    print(f"Warning: Output device ID {device_id} not found. Using default.")
+                    device_id = None
 
-            samplerate = 44100
-            frequency = 880.0  # A pleasant A5 note
-            duration = 0.15   # seconds
-            volume = 0.5
-
-            t = np.linspace(0., duration, int(samplerate * duration), endpoint=False)
-            amplitude = np.iinfo(np.int16).max * volume
-            data = amplitude * np.sin(2. * np.pi * frequency * t)
-
-            sd.play(data.astype(np.int16), samplerate, device=device_id)
+            sound_file = os.path.join(os.path.dirname(__file__), "assets", "listening.wav")
+            data, fs = sf.read(sound_file, dtype='float32')
+            sd.play(data, fs, device=device_id)
             sd.wait()
         except Exception as e:
             print(f"Could not play activation sound: {e}")
 
-    # Run in a separate thread so it doesn't block the main flow
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
 
 
 def play_deactivation_sound(device_id: int | None = None) -> None:
-    """
-    Plays a short, non-blocking deactivation sound.
-    """
+    """Plays a short deactivation sound in a background thread."""
     def _worker():
         try:
-            import numpy as np
-            import sounddevice as sd
+            # Validate the device
+            if device_id is not None:
+                try:
+                    sd.query_devices(device=device_id)
+                except ValueError:
+                    print(f"Warning: Output device ID {device_id} not found. Using default.")
+                    device_id = None
 
-            samplerate = 44100
-            frequency = 440.0  # A lower A4 note
-            duration = 0.15
-            volume = 0.4
-
-            t = np.linspace(0., duration, int(samplerate * duration), endpoint=False)
-            amplitude = np.iinfo(np.int16).max * volume
-            data = amplitude * np.sin(2. * np.pi * frequency * t)
-
-            # A quick fade out to make it sound softer
-            fade_out = np.linspace(1., 0., int(samplerate * duration), endpoint=False)
-            data *= fade_out
-
-            sd.play(data.astype(np.int16), samplerate, device=device_id)
+            sound_file = os.path.join(os.path.dirname(__file__), "assets", "listening_off.wav")
+            data, fs = sf.read(sound_file, dtype='float32')
+            sd.play(data, fs, device=device_id)
             sd.wait()
         except Exception as e:
             print(f"Could not play deactivation sound: {e}")

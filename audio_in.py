@@ -51,9 +51,12 @@ class VAD:
 
         print("👂 Listening for command...")
         try:
+            device_info = sd.query_devices(self.device_index, 'input')
+            channels = int(device_info.get('max_input_channels', 1))
+
             with sd.InputStream(
                 samplerate=self.sample_rate,
-                channels=1,
+                channels=channels,
                 dtype="int16",
                 blocksize=self.frame_length,
                 device=self.device_index,

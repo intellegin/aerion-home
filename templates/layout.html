@@ -85,7 +85,8 @@
         <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' else '' }}">Home</a>
         <a href="{{ url_for('files') }}" class="{{ 'active' if request.endpoint == 'files' else '' }}">Project Files</a>
         <a href="{{ url_for('tools_page') }}" class="{{ 'active' if request.endpoint == 'tools_page' else '' }}">Tools</a>
-        <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">Settings</a>
+        <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">System Settings</a>
+        <a href="{{ url_for('integrations') }}" class="{{ 'active' if request.endpoint == 'integrations' else '' }}">Integrations</a>
     </nav>
 
     <div class="content">

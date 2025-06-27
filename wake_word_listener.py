@@ -45,9 +45,13 @@ class WakeWordDetector:
             self._init_porcupine()
 
         try:
+            # Query the device for its default channel count
+            device_info = sd.query_devices(self.device_index, 'input')
+            channels = int(device_info.get('max_input_channels', 1))
+
             self.stream = sd.InputStream(
                 samplerate=self.porcupine.sample_rate,
-                channels=1,
+                channels=channels,
                 dtype='int16',
                 blocksize=self.porcupine.frame_length,
                 device=self.device_index

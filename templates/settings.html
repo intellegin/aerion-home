@@ -1,85 +1,45 @@
 {% extends "layout.html" %}
-{% block title %}Settings{% endblock %}
+{% block title %}System Settings{% endblock %}
 
 {% block content %}
 <style>
-    .tabs { display: flex; border-bottom: 1px solid #dee2e6; margin-bottom: 20px; }
-    .tab-link { padding: 10px 15px; cursor: pointer; border: none; background: transparent; font-size: 1rem; border-bottom: 3px solid transparent; }
-    .tab-link.active { border-bottom-color: #007bff; font-weight: 600; color: #007bff; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-
     .form-group { margin-bottom: 1.5rem; }
     label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
     input[type="text"], select, input[type="search"] { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; max-width: 400px; }
     .btn { padding: 0.8rem 1.5rem; border-radius: 4px; border: none; font-size: 1rem; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
     .btn-primary { background-color: #007bff; color: white; }
-    .btn-danger { background-color: #dc3545; color: white; }
-    .auth-status { padding: 1rem; border-radius: 4px; margin-top: 1rem; max-width: 400px; }
-    .auth-status.authenticated { background-color: #e6ffed; border: 1px solid #28a745; }
-    .auth-status.unauthenticated { background-color: #ffeeee; border: 1px solid #dc3545; }
     .voice-list { max-height: 250px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; max-width: 400px; }
     .voice-item { padding: 10px; cursor: pointer; }
     .voice-item:hover { background-color: #f1f1f1; }
     .voice-item.selected { background-color: #007bff; color: white; }
 </style>
 
-<h1>Settings</h1>
-
-<div class="tabs">
-    <button class="tab-link active" onclick="openTab(event, 'general')">General</button>
-    <button class="tab-link" onclick="openTab(event, 'voice')">Voice</button>
-    <button class="tab-link" onclick="openTab(event, 'integrations')">Integrations</button>
-</div>
+<h1>System Settings</h1>
 
 <form id="settings-form">
-    <div id="general" class="tab-content active">
-        <h3>General Settings</h3>
-        <div class="form-group">
-            <label for="wake-word">Wake Word</label>
-            <input type="text" id="wake-word" name="wake_word" placeholder="e.g., jarvis">
-        </div>
-        <div class="form-group">
-            <label for="mic-device">Microphone</label>
-            <select id="mic-device" name="mic_device_id"></select>
-        </div>
-        <div class="form-group">
-            <label for="speaker-device">Speaker</label>
-            <select id="speaker-device" name="speaker_device_id"></select>
-        </div>
+    <h3>General Settings</h3>
+    <div class="form-group">
+        <label for="wake-word">Wake Word</label>
+        <input type="text" id="wake-word" name="wake_word" placeholder="e.g., jarvis">
+    </div>
+    <div class="form-group">
+        <label for="mic-device">Microphone</label>
+        <select id="mic-device" name="mic_device_id"></select>
+    </div>
+    <div class="form-group">
+        <label for="speaker-device">Speaker</label>
+        <select id="speaker-device" name="speaker_device_id"></select>
     </div>
 
-    <div id="voice" class="tab-content">
-        <h3>Text-to-Speech Voice</h3>
-        <p>Select a voice for the assistant. Voices are provided by <a href="https://elevenlabs.io/" target="_blank">ElevenLabs</a>.</p>
-        <div class="form-group">
-            <label for="voice-search">Search Voices</label>
-            <input type="search" id="voice-search" placeholder="Search for a voice...">
-        </div>
-        <div class="form-group">
-            <label>Voice List</label>
-            <div id="voice-list" class="voice-list">
-                <p>Loading voices...</p>
-            </div>
-            <input type="hidden" id="voice_id" name="voice_id">
-        </div>
-    </div>
-    
-    <div id="integrations" class="tab-content">
-        <h3>Integrations</h3>
-        <div class="form-group">
-            <h4>Google</h4>
-            <div id="google-auth-status" class="auth-status"></div>
-            <a href="{{ url_for('google_login') }}" id="google-signin-btn" class="btn btn-primary" style="display: none;">Sign in with Google</a>
-            <button type="button" id="google-signout-btn" class="btn btn-danger" style="display: none;">Sign out of Google</button>
-        </div>
-        <hr>
-        <div class="form-group">
-            <h4>Notion</h4>
-            <div id="notion-auth-status" class="auth-status"></div>
-            <a href="{{ url_for('notion_auth') }}" id="notion-signin-btn" class="btn btn-primary" style="display: none;">Connect to Notion</a>
-            <button type="button" id="notion-signout-btn" class="btn btn-danger" style="display: none;">Disconnect Notion</button>
-        </div>
+    <hr style="margin: 2rem 0;">
+
+    <h3>Text-to-Speech Voice</h3>
+    <p>Select a voice for the assistant. Voices are provided by <a href="https://elevenlabs.io/" target="_blank">ElevenLabs</a>.</p>
+    <div class="form-group">
+        <label for="voice-name">Select Voice</label>
+        <input type="text" id="voice-name" list="voice-options" placeholder="Type to search for a voice..." class="form-control" autocomplete="off">
+        <datalist id="voice-options"></datalist>
+        <input type="hidden" id="voice_id" name="voice_id">
     </div>
 
     <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Save All Settings</button>
@@ -88,18 +48,10 @@
 
 {% block scripts %}
 <script>
-function openTab(evt, tabName) {
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    document.querySelectorAll('.tab-link').forEach(link => link.classList.remove('active'));
-    document.getElementById(tabName).classList.add('active');
-    evt.currentTarget.classList.add('active');
-}
-
 document.addEventListener('DOMContentLoaded', function() {
     // --- Globals ---
     const form = document.getElementById('settings-form');
-    let voices = [];
-    let currentSettings = {};
+    let voices = []; // Keep a cache of voices
 
     // --- Populators ---
     function populateDevices(selectElement, url, currentId) {
@@ -115,103 +67,59 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function populateVoices(filter = '') {
-        const voiceList = document.getElementById('voice-list');
-        voiceList.innerHTML = '';
-        const filteredVoices = voices.filter(v => v.name.toLowerCase().includes(filter.toLowerCase()));
-        
-        filteredVoices.forEach(voice => {
-            const item = document.createElement('div');
-            item.className = 'voice-item';
-            item.textContent = voice.name;
-            item.dataset.voiceId = voice.id;
-            if (voice.id === currentSettings.voice_id) {
-                item.classList.add('selected');
-            }
-            item.addEventListener('click', () => {
-                document.querySelectorAll('.voice-item').forEach(i => i.classList.remove('selected'));
-                item.classList.add('selected');
-                document.getElementById('voice_id').value = voice.id;
-            });
-            voiceList.appendChild(item);
-        });
-    }
-
-    // --- Updaters ---
-    function updateGoogleStatus() {
-        fetch('/api/google/status').then(res => res.json()).then(data => {
-            const statusDiv = document.getElementById('google-auth-status');
-            const signinBtn = document.getElementById('google-signin-btn');
-            const signoutBtn = document.getElementById('google-signout-btn');
-            if (data.status === 'authenticated') {
-                statusDiv.textContent = `Authenticated as ${data.name} (${data.email})`;
-                statusDiv.className = 'auth-status authenticated';
-                signinBtn.style.display = 'none';
-                signoutBtn.style.display = 'inline-block';
-            } else {
-                statusDiv.textContent = 'Not authenticated with Google.';
-                statusDiv.className = 'auth-status unauthenticated';
-                signinBtn.style.display = 'inline-block';
-                signoutBtn.style.display = 'none';
-            }
-        });
-    }
-
-    function updateNotionStatus() {
-        fetch('/api/notion/status').then(res => res.json()).then(data => {
-            const statusDiv = document.getElementById('notion-auth-status');
-            const signinBtn = document.getElementById('notion-signin-btn');
-            const signoutBtn = document.getElementById('notion-signout-btn');
-            if (data.status === 'authenticated') {
-                statusDiv.textContent = `Connected to Notion workspace: ${data.workspace_name}`;
-                statusDiv.className = 'auth-status authenticated';
-                signinBtn.style.display = 'none';
-                signoutBtn.style.display = 'inline-block';
-            } else {
-                statusDiv.textContent = 'Not connected to Notion.';
-                statusDiv.className = 'auth-status unauthenticated';
-                signinBtn.style.display = 'inline-block';
-                signoutBtn.style.display = 'none';
-            }
-        });
-    }
-
     // --- Load Initial Data ---
     Promise.all([
         fetch('/api/settings').then(res => res.json()),
         fetch('/api/voices').then(res => res.json())
     ]).then(([settings, voiceData]) => {
-        currentSettings = settings;
-        voices = voiceData;
+        voices = voiceData; // Cache the voices list
         
-        // Populate General
+        // Populate General settings
         document.getElementById('wake-word').value = settings.wake_word || 'jarvis';
         populateDevices(document.getElementById('mic-device'), '/api/microphones', settings.mic_device_id);
         populateDevices(document.getElementById('speaker-device'), '/api/speakers', settings.speaker_device_id);
         
-        // Populate Voice
-        document.getElementById('voice_id').value = settings.voice_id || '';
-        populateVoices();
+        // --- Populate Voice Datalist ---
+        const voiceOptions = document.getElementById('voice-options');
+        if (voiceOptions) {
+            voices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.name;
+                option.dataset.id = voice.id;
+                voiceOptions.appendChild(option);
+            });
+        }
+        
+        // Set initial value for voice selection
+        const voiceNameInput = document.getElementById('voice-name');
+        const voiceIdInput = document.getElementById('voice_id');
+        
+        if (settings.voice_id) {
+            const initialVoice = voices.find(v => v.id === settings.voice_id);
+            if (initialVoice) {
+                voiceNameInput.value = initialVoice.name;
+                voiceIdInput.value = initialVoice.id;
+            }
+        }
 
-        // Populate Integrations
-        updateGoogleStatus();
-        updateNotionStatus();
     }).catch(error => {
         console.error("Failed to load initial settings:", error);
         alert("There was an error loading page settings. Please try refreshing.");
     });
 
     // --- Event Listeners ---
-    document.getElementById('voice-search').addEventListener('input', (e) => {
-        populateVoices(e.target.value);
-    });
-
-    document.getElementById('google-signout-btn').addEventListener('click', () => {
-        fetch('/api/google/logout', { method: 'POST' }).then(updateGoogleStatus);
-    });
-
-    document.getElementById('notion-signout-btn').addEventListener('click', () => {
-        fetch('/api/notion/logout', { method: 'POST' }).then(updateNotionStatus);
+    document.getElementById('voice-name').addEventListener('input', (e) => {
+        const inputName = e.target.value;
+        const voiceIdInput = document.getElementById('voice_id');
+        const selectedVoice = voices.find(v => v.name === inputName);
+        
+        if (selectedVoice) {
+            voiceIdInput.value = selectedVoice.id;
+        } else {
+            // This allows users to type freely without breaking things, but
+            // only a valid selection will have an ID.
+            voiceIdInput.value = '';
+        }
     });
 
     form.addEventListener('submit', function(e) {

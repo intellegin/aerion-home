@@ -1,6 +1,6 @@
 {
     "wake_word": "computer",
-    "mic_device_id": "1",
-    "speaker_device_id": "2",
+    "mic_device_id": "3",
+    "speaker_device_id": "4",
     "voice_id": "4YYIPFl9wE5c4L2eu2Gb"
 }

@@ -1,0 +1,87 @@
+{% extends "layout.html" %}
+{% block title %}Integrations{% endblock %}
+
+{% block content %}
+<style>
+    .form-group { margin-bottom: 1.5rem; }
+    label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+    .btn { padding: 0.8rem 1.5rem; border-radius: 4px; border: none; font-size: 1rem; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
+    .btn-primary { background-color: #007bff; color: white; }
+    .btn-danger { background-color: #dc3545; color: white; }
+    .auth-status { padding: 1rem; border-radius: 4px; margin-top: 1rem; max-width: 400px; }
+    .auth-status.authenticated { background-color: #e6ffed; border: 1px solid #28a745; }
+    .auth-status.unauthenticated { background-color: #ffeeee; border: 1px solid #dc3545; }
+</style>
+
+<h1>Integrations</h1>
+<p>Connect your accounts to give the assistant more capabilities.</p>
+
+<div class="form-group">
+    <h4>Google</h4>
+    <div id="google-auth-status" class="auth-status"></div>
+    <a href="{{ url_for('google_login') }}" id="google-signin-btn" class="btn btn-primary" style="display: none;">Sign in with Google</a>
+    <button type="button" id="google-signout-btn" class="btn btn-danger" style="display: none;">Sign out of Google</button>
+</div>
+<hr>
+<div class="form-group">
+    <h4>Notion</h4>
+    <div id="notion-auth-status" class="auth-status"></div>
+    <a href="{{ url_for('notion_auth') }}" id="notion-signin-btn" class="btn btn-primary" style="display: none;">Connect to Notion</a>
+    <button type="button" id="notion-signout-btn" class="btn btn-danger" style="display: none;">Disconnect Notion</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    function updateGoogleStatus() {
+        fetch('/api/google/status').then(res => res.json()).then(data => {
+            const statusDiv = document.getElementById('google-auth-status');
+            const signinBtn = document.getElementById('google-signin-btn');
+            const signoutBtn = document.getElementById('google-signout-btn');
+            if (data.status === 'authenticated') {
+                statusDiv.textContent = `Authenticated as ${data.name} (${data.email})`;
+                statusDiv.className = 'auth-status authenticated';
+                signinBtn.style.display = 'none';
+                signoutBtn.style.display = 'inline-block';
+            } else {
+                statusDiv.textContent = 'Not authenticated with Google.';
+                statusDiv.className = 'auth-status unauthenticated';
+                signinBtn.style.display = 'inline-block';
+                signoutBtn.style.display = 'none';
+            }
+        });
+    }
+
+    function updateNotionStatus() {
+        fetch('/api/notion/status').then(res => res.json()).then(data => {
+            const statusDiv = document.getElementById('notion-auth-status');
+            const signinBtn = document.getElementById('notion-signin-btn');
+            const signoutBtn = document.getElementById('notion-signout-btn');
+            if (data.status === 'authenticated') {
+                statusDiv.textContent = `Connected to Notion workspace: ${data.workspace_name}`;
+                statusDiv.className = 'auth-status authenticated';
+                signinBtn.style.display = 'none';
+                signoutBtn.style.display = 'inline-block';
+            } else {
+                statusDiv.textContent = 'Not connected to Notion.';
+                statusDiv.className = 'auth-status unauthenticated';
+                signinBtn.style.display = 'inline-block';
+                signoutBtn.style.display = 'none';
+            }
+        });
+    }
+
+    updateGoogleStatus();
+    updateNotionStatus();
+
+    document.getElementById('google-signout-btn').addEventListener('click', () => {
+        fetch('/api/google/logout', { method: 'POST' }).then(updateGoogleStatus);
+    });
+
+    document.getElementById('notion-signout-btn').addEventListener('click', () => {
+        fetch('/api/notion/logout', { method: 'POST' }).then(updateNotionStatus);
+    });
+});
+</script>
+{% endblock %} 

@@ -92,6 +92,11 @@ def settings():
     """Page for managing application settings, like voice selection."""
     return render_template('settings.html')
 
+@app.route('/integrations')
+def integrations():
+    """Page for managing third-party integrations like Google and Notion."""
+    return render_template('integrations.html')
+
 @app.route('/tools')
 def tools_page():
     """Page to display available tools."""
@@ -432,7 +437,7 @@ def main():
     
     # Start the Flask app with the reloader
     port = 5001
-    socketio.run(app, host="127.0.0.1", port=port, debug=True, allow_unsafe_werkzeug=True, extra_files=extra_files)
+    socketio.run(app, host="0.0.0.0", port=port, debug=True, allow_unsafe_werkzeug=True, extra_files=extra_files)
 
 if __name__ == "__main__":
     main() 
