@@ -20,6 +20,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Look up Jane Doe in my contacts.",
+    "What is John Smith's email address?",
+    "Find the contact information for my manager."
+]
+
 def run(name: str) -> str:
     """
     Searches all of the user's Google Contacts for a person by name and returns their contact info.

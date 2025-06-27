@@ -35,6 +35,11 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Send a text to +15551234567 that says 'Hi there, when are you free to chat?'",
+    "Text my mom and say 'I'll be home late for dinner tonight.'",
+]
+
 def run(to_number: str, message: str) -> str:
     """
     Sends an SMS message using Twilio.

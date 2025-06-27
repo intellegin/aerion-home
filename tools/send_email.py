@@ -28,6 +28,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Yes, that looks good. Send it.",
+    "Go ahead and send the email.",
+    "Confirm and send."
+]
+
 def run(to: str, subject: str, body: str) -> str:
     """
     Sends an email to a specific email address. This should only be called after a user has confirmed a draft.

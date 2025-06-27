@@ -13,6 +13,8 @@
         a, a:visited { color: #007BFF; text-decoration: none; }
         a:hover { text-decoration: underline; }
 
+        .header-actions { display: flex; align-items: center; gap: 20px; }
+
         .auth-display {
             display: flex;
             align-items: center;
@@ -49,6 +51,14 @@
         /* Page Content */
         .content { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 600px; border-radius: 8px; }
+        .close-btn { color: #aaa; float: right; font-size: 28px; font-weight: bold; }
+        .close-btn:hover, .close-btn:focus { color: black; text-decoration: none; cursor: pointer; }
+        .modal-body ul { list-style-type: none; padding-left: 0; }
+        .modal-body li { background-color: #f0f0f0; padding: 10px 15px; border-radius: 5px; margin-bottom: 8px; font-family: monospace; color: #333; }
+
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
@@ -63,29 +73,32 @@
             </a>
             <h1><a href="{{ url_for('index') }}">AERION</a></h1>
         </div>
-        <a href="{{ url_for('auth') }}" class="auth-display">
-            {% if google_auth_status and google_auth_status.status == 'authenticated' %}
-                <div class="user-info">
-                    <span class="name">{{ google_auth_status.name.split()[0] if google_auth_status.name else (google_auth_status.email or 'Authenticated') }}</span>
-                    {% if google_auth_status.email %}
-                        <div class="email">{{ google_auth_status.email }}</div>
-                    {% endif %}
-                </div>
-                <img src="{{ google_auth_status.picture if google_auth_status.picture else url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
-            {% else %}
-                <div class="user-info">
-                     <span class="name">Guest</span>
-                </div>
-                <img src="{{ url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
-            {% endif %}
-        </a>
+        <div class="header-actions">
+            <a href="#" id="help-btn" title="Show Example Commands">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </a>
+            <a href="{{ url_for('auth') }}" class="auth-display">
+                {% if google_auth_status and google_auth_status.status == 'authenticated' %}
+                    <div class="user-info">
+                        <span class="name">{{ google_auth_status.name.split()[0] if google_auth_status.name else (google_auth_status.email or 'Authenticated') }}</span>
+                        {% if google_auth_status.email %}
+                            <div class="email">{{ google_auth_status.email }}</div>
+                        {% endif %}
+                    </div>
+                    <img src="{{ google_auth_status.picture if google_auth_status.picture else url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
+                {% else %}
+                    <div class="user-info">
+                        <span class="name">{{ USER_NAME }}</span>
+                    </div>
+                    <img src="{{ url_for('static', filename='placeholder.svg') }}" alt="Profile Picture" class="profile-pic">
+                {% endif %}
+            </a>
+        </div>
     </header>
     
     <nav class="nav">
         <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' else '' }}">Home</a>
-        <a href="{{ url_for('files') }}" class="{{ 'active' if request.endpoint == 'files' else '' }}">Project Files</a>
-        <a href="{{ url_for('tools_page') }}" class="{{ 'active' if request.endpoint == 'tools_page' else '' }}">Tools</a>
-        <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">System Settings</a>
+        <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' else '' }}">Settings & Admin</a>
         <a href="{{ url_for('integrations') }}" class="{{ 'active' if request.endpoint == 'integrations' else '' }}">Integrations</a>
     </nav>
 
@@ -100,6 +113,46 @@
         {% block content %}{% endblock %}
     </div>
 
+    <!-- The Modal -->
+    <div id="help-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <div class="modal-body">
+                <h2>Example Commands</h2>
+                <p>Here are some examples of what you can ask the assistant:</p>
+                {% if sample_prompts %}
+                    <ul>
+                        {% for prompt in sample_prompts %}
+                            <li>{{ prompt }}</li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>No sample commands have been defined in the tool files.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
     {% block scripts %}{% endblock %}
+
+    <script>
+        // Modal JavaScript
+        var modal = document.getElementById("help-modal");
+        var btn = document.getElementById("help-btn");
+        var span = document.getElementsByClassName("close-btn")[0];
+
+        btn.onclick = function(e) {
+            e.preventDefault();
+            modal.style.display = "block";
+        }
+        span.onclick = function() {
+            modal.style.display = "none";
+        }
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+    </script>
 </body>
 </html> 

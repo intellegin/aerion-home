@@ -27,6 +27,12 @@ TOOL_DEFINITION = {
     }
 }
 
+SAMPLE_PROMPTS = [
+    "Create a new tool named 'tell_joke' that tells a random joke.",
+    "Make a tool that can fetch the current weather for a given city.",
+    "Generate a tool file to get the top stories from Hacker News."
+]
+
 def run(tool_name: str, tool_code: str, tool_definition_json: str) -> str:
     """
     Creates a new Python file for a tool in the 'tools' directory.

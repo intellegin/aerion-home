@@ -5,6 +5,7 @@ import json
 # --- Globals to hold the loaded tools ---
 tools = []
 available_functions = {}
+sample_prompts = []
 
 def _load_tools():
     """
@@ -12,12 +13,14 @@ def _load_tools():
     Each tool file is expected to have:
     - TOOL_DEFINITION: A dictionary defining the tool for the OpenAI API.
     - run: The function to be executed for the tool.
+    - SAMPLE_PROMPTS (optional): A list of example prompts.
     """
-    global tools, available_functions
+    global tools, available_functions, sample_prompts
     
     # Clear existing loaded tools to allow for reloading
     tools = []
     available_functions = {}
+    sample_prompts = []
 
     tools_dir = os.path.dirname(__file__)
     
@@ -37,6 +40,11 @@ def _load_tools():
                     if hasattr(module, 'TOOL_DEFINITION') and hasattr(module, 'run'):
                         tool_def = module.TOOL_DEFINITION
                         
+                        # Add sample prompts if they exist
+                        if hasattr(module, 'SAMPLE_PROMPTS'):
+                            tool_def['sample_prompts'] = module.SAMPLE_PROMPTS
+                            sample_prompts.extend(module.SAMPLE_PROMPTS)
+
                         # Ensure function name matches definition
                         func_name = tool_def.get("function", {}).get("name")
                         if not func_name:

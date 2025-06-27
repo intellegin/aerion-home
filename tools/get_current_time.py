@@ -19,6 +19,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "What time is it in London?",
+    "What's the current time on the US West Coast?",
+    "Get the time for the 'America/New_York' timezone."
+]
+
 def run(timezone: str) -> str:
     """
     Get the current time in a specific timezone.

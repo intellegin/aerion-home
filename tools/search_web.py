@@ -19,6 +19,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Search the web for the weather in San Francisco.",
+    "Who won the last Super Bowl?",
+    "Look up the latest news on AI."
+]
+
 def run(query: str) -> str:
     """
     Searches the web using DuckDuckGo for a given query.

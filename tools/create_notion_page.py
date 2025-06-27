@@ -33,6 +33,12 @@ TOOL_DEFINITION = {
     }
 }
 
+SAMPLE_PROMPTS = [
+    "Create a new page in the 'Meeting Notes' database with the title 'Project Kickoff' and content 'We discussed the project timeline and goals.'",
+    "Add a page to my 'Ideas' database. Title it 'New App Idea' and write down 'A mobile app that tracks water intake.'",
+    "In my database with ID 'xyz-123', create a page titled 'Book Summary: The Great Gatsby' and add the key plot points as content."
+]
+
 def _get_notion_client() -> Client | None:
     """Helper to load token and initialize the Notion client."""
     token_data = notion_auth.load_token()

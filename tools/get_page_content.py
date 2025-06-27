@@ -25,6 +25,12 @@ TOOL_DEFINITION = {
     }
 }
 
+SAMPLE_PROMPTS = [
+    "What is the content of the Notion page with ID 'abc-123'?",
+    "Read the page about the 'Q3 Marketing Plan' and tell me what it says.",
+    "Get the text from my 'Daily Journal' page."
+]
+
 def _get_notion_client() -> Client | None:
     """Helper to load token and initialize the Notion client."""
     token_data = notion_auth.load_token()

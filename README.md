@@ -1,6 +1,23 @@
-# Pi-5 AI Voice Assistant
+# Aerion: Your Personal AI Framework
 
-This project transforms a computer (originally a Raspberry Pi 5, now platform-agnostic) into a sophisticated, voice-controlled AI assistant. It features a modular architecture, a web-based UI for control and real-time feedback, and an extensible tool system that allows the AI to interact with external services like Google Calendar, web search, and more.
+This project is a sophisticated, voice-controlled AI assistant built on a modular, extensible framework. It features a real-time web UI, a powerful tool system, and deep integrations with external services. Originally designed for a Raspberry Pi, it is now a platform-agnostic framework that you can run on any system and adapt for any purpose.
+
+---
+
+## Core Features
+
+-   **🎙️ Voice-Controlled Assistant**: Hands-free interaction using a wake word, with real-time voice activity detection and transcription.
+-   **🌐 Real-Time Web UI**: A comprehensive web interface for controlling the assistant, viewing live dialogue, managing tools, editing files, and configuring settings.
+-   **🧩 Modular & Hot-Loadable Tools**: The assistant's capabilities are defined by simple Python files in the `tools/` directory. The system automatically loads new tools without requiring a restart.
+-   **🤖 Agentic Capabilities**:
+    -   **Tool Creation**: The assistant can write its own tools by generating new Python files in the `tools/` directory.
+    -   **Workflow Chaining**: The AI can intelligently chain multiple tool calls together to accomplish complex tasks.
+-   **🔌 Major Integrations**:
+    -   **Notion**: Search databases, create and edit pages, and perform Q&A with your Notion workspace.
+    -   **Google**: Authenticates with Google services (Calendar, Gmail) using OAuth2.
+    -   **Twilio**: Send SMS messages directly from the assistant.
+-   **🔒 Secure Remote Access**: Built-in `ngrok` integration automatically creates a secure public URL for the web UI, allowing you to connect from anywhere and enabling webhooks for integrations like Notion.
+-   **⚙️ High Configurability**: Easily configure wake words, select specific microphone and speaker devices, and choose from a wide range of AI voices, all from the settings page.
 
 ---
 
@@ -8,24 +25,24 @@ This project transforms a computer (originally a Raspberry Pi 5, now platform-ag
 
 The system is split into two main processes that communicate in real time:
 
-1.  **Web UI (`web_ui.py`)**: A Flask application that serves as the control panel and process manager. It provides a web interface to start/stop the assistant, manage settings, and view the conversation in real time.
-2.  **Assistant (`main.py`)**: The core voice assistant logic. It handles wake-word detection, audio transcription, command processing via an LLM, and text-to-speech responses.
+1.  **Web UI (`web_ui.py`)**: A Flask application that serves as the control panel and process manager.
+2.  **Assistant (`main.py`)**: The core voice assistant logic that handles wake-word detection, audio processing, and tool execution.
 
-Communication between the browser, the web UI server, and the assistant process is handled by **Socket.IO**, enabling real-time status updates, conversation display, and commands.
+Communication between the browser, the web UI server, and the assistant process is handled by **Socket.IO**, enabling real-time updates.
 
 ```mermaid
 graph TD
     subgraph Browser
-        A[Web UI - home.html]
+        A[Web UI - Vue.js Frontend]
     end
 
     subgraph Web Server (Flask)
         B(web_ui.py)
-        C{settings.json}
+        C{config.py & .env}
     end
     
     subgraph Assistant Process
-        E(main.py)
+        E(start.py -> main.py)
         F[Wake Word]
         G[VAD & Transcription]
         H[LLM Command Handler]
@@ -35,7 +52,7 @@ graph TD
 
     A -- HTTP/Socket.IO --> B
     B -- Manages --> E
-    B -- Reads/Writes --> C
+    B -- Reads --> C
 
     E -- Socket.IO --> B
     B -- Socket.IO --> A
@@ -51,45 +68,13 @@ graph TD
 
 ---
 
-## Key Components
-
--   **`web_ui.py`**: Flask-based web server.
-    -   Starts/stops the `main.py` assistant process.
-    -   Serves the HTML/CSS/JS frontend.
-    -   Handles Google OAuth2 authentication flow for tools.
-    -   Provides a settings page to configure the wake word, microphone, and speaker.
-    -   Uses Socket.IO to push real-time status, state, and dialogue updates to the browser.
-
--   **`main.py`**: The main assistant loop.
-    -   Connects to the `web_ui.py` server via a Socket.IO client.
-    -   **Wake Word (`wake_word_listener.py`)**: Uses `pvporcupine` to listen for a wake word (e.g., "Jarvis").
-    -   **Audio Input (`audio_in.py`)**: Uses `webrtcvad` for Voice Activity Detection to determine when the user has finished speaking, then transcribes the captured audio using **Picovoice Leopard** for fast, on-device performance.
-    -   **Command Handling (`command_handler.py`)**: Sends the transcribed text and conversation history to an OpenAI LLM to get a response or a tool call.
-    -   **Text-to-Speech (`speak.py`)**: Synthesizes the LLM's response into audio using **ElevenLabs**.
-
--   **`tools/`**: A directory containing the assistant's tools.
-    -   Each tool is a separate `.py` file containing a `run()` function and a `description` variable.
-    -   The `__init__.py` file dynamically loads all tools, making them available to the `command_handler`.
-    -   This modular design allows for easy extension. The assistant can even create new tools for itself using the `create_new_tool` function.
-
--   **`socket_client.py`**: A shared Socket.IO client instance used by `main.py` and other components to communicate with the `web_ui.py` server.
-
--   **`templates/home.html`**: The main page of the web UI.
-    -   Displays the assistant's status (running/stopped) and state (listening, processing, speaking).
-    -   Provides a button to start/stop the assistant.
-    -   Shows a real-time transcript of the conversation between the user and the AI.
-    -   Links to the settings page.
-
--   **`database.py`**: Logs all conversations to a local SQLite database for history and analysis.
-
----
-
 ## Setup and Installation
 
 ### 1. Prerequisites
 - Python 3.9+
 - An internet connection
 - For voice I/O: a microphone and speakers
+- An [ngrok account](https://ngrok.com/) and authtoken for secure remote access.
 
 ### 2. Clone the repository and install dependencies:
 ```bash
@@ -101,9 +86,16 @@ pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables
-Create a `.env` file in the project root and add the following keys.
+Create a `.env` file in the project root by copying the example and add your secret keys.
+
+```bash
+cp .env.example .env
+```
+
+Then, edit `.env` and fill in your keys:
 
 ```env
+# --- Core Services ---
 # OpenAI for the language model
 OPENAI_API_KEY="sk-..."
 
@@ -112,213 +104,119 @@ ELEVEN_API_KEY="..."
 
 # Picovoice for on-device wake-word and transcription
 PICOVOICE_ACCESS_KEY="..."
+
+# --- Integrations ---
+# Ngrok for secure tunneling (get from your ngrok dashboard)
+NGROK_AUTHTOKEN="..."
+
+# Twilio for sending SMS
+TWILIO_ACCOUNT_SID="..."
+TWILIO_AUTH_TOKEN="..."
+TWILIO_PHONE_NUMBER="..." # Your Twilio phone number
+
+# Notion Integration
+NOTION_CLIENT_ID="..."
+NOTION_CLIENT_SECRET="..."
+# NOTION_ACCESS_TOKEN is generated and stored automatically
+
+# --- Optional ---
+# Set to your name to be greeted in the UI
+USER_NAME="Guest"
 ```
 
-### 4. Google Authentication (Optional, for Google Tools)
-If you want to use tools that interact with Google services (like Calendar), you must authenticate.
+### 4. Google Authentication (Optional)
+If you want to use tools that interact with Google services (like Calendar), you must create credentials.
 
 1.  Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2.  Create a new project.
 3.  Enable the **Google Calendar API**, **Gmail API**, and **People API**.
 4.  Create an "OAuth 2.0 Client ID" credential for a "Web application".
-5.  Under "Authorized redirect URIs", add `http://127.0.0.1:5001/google/callback`.
-6.  Download the JSON credentials file and save it as `credentials.json` in the project's root directory.
+5.  Download the JSON credentials file and save it as `credentials.json` in the project's root directory.
+6.  When you run the app, it will generate a secure ngrok URL. You must add this URL to your Google Console under "Authorized redirect URIs".
+    -   Example: `https://<your-ngrok-subdomain>.ngrok-free.app/google/callback`
+
+### 5. Notion Integration Setup (Optional)
+1.  Go to [Notion Developers](https://www.notion.so/my-integrations) and create a new integration.
+2.  Note the **Client ID** and **Client Secret** and add them to your `.env` file.
+3.  The application will generate a secure ngrok URL when it starts. You must add this URL to your Notion integration settings under "Redirect URIs".
+    -   Example: `https://<your-ngrok-subdomain>.ngrok-free.app/notion/callback`
+4.  Share specific databases or pages in your Notion workspace with your new integration to grant it access.
 
 ---
 
 ## How to Run
 
-1.  **Start the Web UI**:
+1.  **Start the Application**:
     ```bash
-    python web_ui.py
+    python start.py
     ```
-    This will start the Flask server. Open your browser to `http://127.0.0.1:5001`.
+    This script launches the Flask web server. The terminal will display a public `ngrok` URL.
 
-2.  **Configure Settings**:
-    - Click the settings icon in the top right.
-    - Set your desired wake word (e.g., "jarvis").
-    - Select your microphone and speaker devices from the dropdowns and save.
+2.  **Access the UI**:
+    - Open your browser to the provided `ngrok` URL or to `http://127.0.0.1:5001` if accessing locally.
 
-3.  **Authenticate with Google (if needed)**:
-    - On the settings page, click the "Sign in with Google" button and complete the OAuth flow. A `token.json` file will be created.
+3.  **Configure Settings**:
+    - Navigate to the **Settings** tab.
+    - Select your microphone and speaker devices, choose a voice, and set a wake word.
+    - Save your changes.
 
-4.  **Start the Assistant**:
-    -   Navigate back to the home page.
-    -   Click the large microphone button. It will turn green to indicate the assistant is running and listening for the wake word.
+4.  **Connect Integrations**:
+    - Navigate to the **Integrations** tab.
+    - Click "Connect" for Notion or Google and complete the authentication flow.
 
-5.  **Talk to the Assistant**:
-    -   Say the wake word.
-    -   The UI will update to show "Listening...". Speak your command.
-    -   The conversation will appear in real-time on the screen.
+5.  **Start the Assistant**:
+    - Navigate back to the **Home** tab.
+    - Click the large microphone button. It will turn green to indicate the assistant is running and listening for the wake word.
 
-You can stop the assistant at any time by clicking the large button again.
-
----
-
-## Creating a New Tool
-
-The assistant can create new tools for itself. The process is as follows:
-
-1.  **Request**: Ask the assistant to create a new tool. For example: "Create a tool that tells me a joke."
-2.  **Execution**: The assistant will use the `create_new_tool` function. This function writes a new Python file into the `tools/` directory (e.g., `tools/tell_joke.py`).
-3.  **Structure**: The new file will contain:
-    - A `description` variable explaining what the tool does.
-    - A `run()` function that implements the tool's logic.
-4.  **Activation**: The assistant will automatically detect and load the new tool on its next restart, making it immediately available for use.
+6.  **Talk to the Assistant**:
+    - Say the wake word.
+    - The UI will update to show "Listening...". Speak your command.
+    - The full conversation will appear in real-time on the screen.
 
 ---
 
-## 1. Features
+## Using as a Framework
 
-• **Keyword commands** — Immediate replies for hard-coded phrases (e.g. "hello").
+This project is designed to be a starting point. Here's how to adapt and extend it:
 
-• **LLM fallback** — When no keyword matches, the user's text is sent to OpenAI Chat Completion (GPT-3.5-Turbo by default).
+### 1. Creating a New Tool
+This is the primary way to add new functionality.
 
-• **Voice-only input** — Records microphone audio, converts speech → text with OpenAI Whisper.
+1.  **Create a file**: Add a new `.py` file to the `tools/` directory (e.g., `tools/get_weather.py`).
+2.  **Define the Tool**: Inside the file, add two components:
+    -   A `TOOL_DEFINITION` dictionary describing the function, its parameters, and what it does. This follows the OpenAI Functions format.
+    -   A `run(**args)` function that contains the Python logic to execute the tool. It must accept the same arguments defined in `TOOL_DEFINITION`.
+3.  **Update the System Prompt**: Open `config.py` and modify the `SYSTEM_PROMPT`. Add a "WORKFLOW" section that describes when and how the AI should use your new tool.
+4.  **Reload and Use**: The application will automatically load the new tool. You can now ask the assistant to use it.
 
-• **CLI first, voice ready** — The starter loop runs in a terminal, but the architecture is ready for you to plug in speech-to-text (Whisper/Vosk) and text-to-speech (Piper/Mimic3).
+### 2. Customizing the UI
+The frontend is built with standard HTML, CSS, and JavaScript.
 
-• **Runs at boot** — Optional `systemd` service file lets the Pi launch the chat agent automatically after power-up.
-
-• **Audible replies** — Speaks responses using pyttsx3, `say` (macOS), or `espeak`.
-
----
-
-## 2. Repository Layout
-
-```text
-.
-├── audio_in.py            # Record + transcribe voice (OpenAI Whisper)
-├── command_handler.py     # Rule-based keywords → canned replies
-├── main.py                # Voice-only main loop
-├── requirements.txt       # Python dependencies
-├── README.md              # This document
-└── systemd/
-    └── ai_communicator.service  # (optional) Boot service
-```
-
-> **Note**  `main.py` and the `systemd/` file are not created yet; the README shows the recommended structure.
+-   **Templates**: Modify the `.html` files in the `templates/` directory to change the layout.
+-   **Static Assets**: Add or change styles in `static/css/` and client-side logic in `static/js/`.
+-   **Backend API**: Add new API endpoints in `web_ui.py` to support new frontend features.
 
 ---
 
-## 3. Hardware Requirements
+## Current Tools
 
-1. Raspberry Pi 5 (4 GB or 8 GB RAM recommended)
-2. micro-SD card with Raspberry Pi OS (64-bit)
-3. Internet connectivity (Ethernet or Wi-Fi)
-4. OPTIONAL for voice:
-   • USB microphone or ReSpeaker HAT
-   • Speakers or 3.5 mm audio output
+The framework comes with a powerful set of pre-built tools:
 
----
-
-## 4. Software Setup (Python ≥ 3.9)
-
-### 4.1. Clone & create a virtual environment
-
-```bash
-sudo apt update && sudo apt install python3-venv git -y
-
-git clone https://github.com/yourname/pi5-ai-communicator.git
-cd pi5-ai-communicator
-
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 4.2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-*The key packages are: `openai` (LLM access) and `python-dotenv` (loads environment variables from a `.env` file).*
-
-### 4.3. Configure your OpenAI key
-
-Create a file named `.env` in the project root:
-
-```env
-OPENAI_API_KEY="sk-…your_key…"
-OPENAI_MODEL="gpt-3.5-turbo"  # optional override
-```
-
-**Never commit your API key to version control.**
-
----
-
-## 5. Running the chat agent (VOICE MODE)
-
-```bash
-python main.py
-```
-
-You'll be prompted with a 5-second recording window. Speak, wait for transcription, then read the AI response.
-
----
-
-## 6. Extending the Project
-
-| Area               | Quick Start |
-|--------------------|-------------|
-| Voice input        | Already built-in (audio_in.py → OpenAI Whisper). |
-| Text-to-Speech     | Already built-in via pyttsx3; install `say` (mac), or `espeak` on Linux if needed. |
-| Wake-word          | Try Porcupine (`pip install pvporcupine`). |
-| Web UI             | Add a Flask or FastAPI endpoint, then serve with a lightweight frontend (HTMX/Alpine). |
-
----
-
-## 7. Autostart with systemd (optional)
-
-1. Copy `systemd/ai_communicator.service` to `/etc/systemd/system/`.
-2. Edit `User=` and paths if different.
-3. Enable & start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable ai_communicator
-sudo systemctl start ai_communicator
-```
-
----
-
-## 8. Troubleshooting
-
-• **`ModuleNotFoundError`** — Ensure you activated the venv: `source venv/bin/activate`.
-
-• **`openai.error.AuthenticationError`** — Double-check `OPENAI_API_KEY` in `.env`.
-
-• **Audio glitches** — Increase `dtparam=audio=on`, tweak ALSA volumes, or use a USB audio dongle.
-
----
-
-## 9. License
-
-MIT License © 2024 Your Name
-
-Feel free to fork and improve.  PRs welcome!
-
----
-
-## 10. Database Schema
-
-The application can log all conversations to a Supabase database. The table is named `messages` and has the following schema:
-
-| Column          | Type      | Description                                                                 |
-|-----------------|-----------|-----------------------------------------------------------------------------|
-| `id`            | `int4`    | Primary key, auto-incrementing.                                             |
-| `platform`      | `text`    | The platform the message originated from. Hardcoded to `"raspberry"`.         |
-| `source_id`     | `text`    | Nullable. Not currently used.                                               |
-| `from_user`     | `text`    | Identifier for the sender (`"user"` or `"jarvis"`).                           |
-| `to_user`       | `text`    | Identifier for the recipient (`"jarvis"` or `"user"`).                          |
-| `content`       | `text`    | The text content of the message.                                            |
-| `direction`     | `text`    | `"outbound"` for user -> AI, `"inbound"` for AI -> user.                     |
-| `method`        | `text`    | The method of communication. Hardcoded to `"voice"`.                          |
-| `agent_id`      | `int4`    | Nullable. Not currently used.                                               |
-| `email_id`      | `int4`    | Nullable. Not currently used.                                               |
-| `prompt_log_id` | `int4`    | Nullable. Not currently used.                                               |
-| `is_handled`    | `bool`    | Hardcoded to `true`.                                                        |
-| `message_type`  | `text`    | The type of message. Hardcoded to `"conversation"`.                         |
-| `created_at`    | `timestamp` | Automatically set to the time of insertion.                               |
-| `user_id`       | `int8`    | Nullable. Not currently used.                                               |
-| `chat_session_id` | `int4`    | A unique integer ID for each conversation session.                          | 
+| File Name                   | Description                                             |
+| --------------------------- | ------------------------------------------------------- |
+| `create_new_tool.py`        | Creates a new tool file in the `tools/` directory.      |
+| `create_notion_page.py`     | Creates a new page in a Notion database.                |
+| `edit_notion_page.py`       | Appends content to an existing Notion page.             |
+| `get_page_content.py`       | Retrieves the full content of a Notion page.            |
+| `search_pages_in_database.py`| Searches for pages within a specific Notion database.   |
+| `search_notion_databases.py`| Searches for Notion databases shared with the integration.|
+| `send_sms.py`               | Sends an SMS message using Twilio.                      |
+| `search_web.py`             | Searches the web using DuckDuckGo.                      |
+| `get_current_time.py`       | Gets the current time and date.                         |
+| `create_email_draft.py`     | Creates a draft email in Gmail.                         |
+| `get_all_upcoming_events.py`| Fetches upcoming events from Google Calendar.           |
+| `get_my_profile.py`         | Gets basic user profile info from Google.               |
+| `navigate_ui.py`            | Navigates the web UI to different pages.                |
+| `save_email_draft.py`       | Saves an email draft. (Likely overlaps with above)      |
+| `search_contacts.py`        | Searches Google Contacts.                               |
+| `send_email.py`             | Sends an email using Gmail.                             |

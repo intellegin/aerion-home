@@ -14,6 +14,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Who am I?",
+    "What's my name?",
+    "What is my email address?"
+]
+
 def run() -> str:
     """
     Fetches the user's own Google profile information (name and email).

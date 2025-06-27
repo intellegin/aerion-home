@@ -30,6 +30,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "What's on my schedule for today?",
+    "Do I have any upcoming appointments?",
+    "Read me my next few calendar events."
+]
+
 def run(max_results_per_calendar: int = 5) -> str:
     """
     Fetches all upcoming events from the user's calendars.

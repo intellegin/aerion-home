@@ -13,7 +13,7 @@ from speak import get_elevenlabs_voices, DEFAULT_VOICE # Import the new function
 import google_auth as google_auth_helper # Import the new auth module
 import notion_auth as notion_auth_helper # Import the new Notion auth module
 import sounddevice as sd # Import the sounddevice library
-from tools import tools, _load_tools # Import the loader
+from tools import tools, _load_tools, sample_prompts # Import the loader and prompts
 from audio_in import Transcriber # Corrected import path
 from command_handler import handle_command, conversation_history, SYSTEM_PROMPT
 
@@ -41,6 +41,11 @@ def inject_auth_status():
         google_auth_status=google_auth_helper.get_auth_status(),
         notion_auth_status=notion_auth_helper.get_auth_status()
     )
+
+@app.context_processor
+def inject_sample_prompts():
+    """Injects sample prompts into all templates for the help modal."""
+    return dict(sample_prompts=sample_prompts)
 
 # Cache for voices to avoid excessive API calls
 _voice_cache = None
@@ -81,26 +86,16 @@ def index():
     """A minimalist home page with just the assistant control."""
     return render_template('home.html')
 
-@app.route('/files')
-def files():
-    """Page for viewing and editing project files."""
-    editable_files = get_editable_files()
-    return render_template('files.html', files=editable_files)
-
 @app.route('/settings')
 def settings():
     """Page for managing application settings, like voice selection."""
-    return render_template('settings.html')
+    editable_files = get_editable_files()
+    return render_template('settings.html', files=editable_files, tools=tools)
 
 @app.route('/integrations')
 def integrations():
     """Page for managing third-party integrations like Google and Notion."""
     return render_template('integrations.html')
-
-@app.route('/tools')
-def tools_page():
-    """Page to display available tools."""
-    return render_template('tools.html', tools=tools)
 
 @app.route('/auth')
 def auth():

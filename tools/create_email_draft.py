@@ -27,6 +27,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Draft an email to Jane Doe about our meeting tomorrow.",
+    "Write an email to my manager asking for a day off next Friday.",
+    "Prepare an email to the 'Project Team' group to update them on our progress."
+]
+
 def run(contact_name: str, subject: str, body: str) -> str:
     """
     Finds a contact's email using fuzzy search and prepares a draft.

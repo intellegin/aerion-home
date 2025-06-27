@@ -1,53 +1,137 @@
 {% extends "layout.html" %}
-{% block title %}System Settings{% endblock %}
+{% block title %}Settings & Admin{% endblock %}
 
 {% block content %}
 <style>
+    /* Tab Navigation */
+    .tabs {
+        display: flex;
+        border-bottom: 1px solid #ddd;
+        margin-bottom: 20px;
+    }
+    .tab-link {
+        padding: 10px 20px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        font-size: 16px;
+        border-bottom: 3px solid transparent;
+    }
+    .tab-link.active {
+        font-weight: bold;
+        color: #007bff;
+        border-bottom-color: #007bff;
+    }
+
+    /* Tab Content */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Form & List Styles */
     .form-group { margin-bottom: 1.5rem; }
     label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
-    input[type="text"], select, input[type="search"] { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; max-width: 400px; }
+    input[type="text"], select { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; max-width: 400px; }
     .btn { padding: 0.8rem 1.5rem; border-radius: 4px; border: none; font-size: 1rem; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
     .btn-primary { background-color: #007bff; color: white; }
-    .voice-list { max-height: 250px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; max-width: 400px; }
-    .voice-item { padding: 10px; cursor: pointer; }
-    .voice-item:hover { background-color: #f1f1f1; }
-    .voice-item.selected { background-color: #007bff; color: white; }
+    .file-list, .tool-list { list-style-type: none; padding-left: 0; }
+    .file-list li, .tool-list .card { border: 1px solid #eee; padding: 15px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+    .tool-list .card h5 { margin-bottom: 5px; }
+    .tool-list .card p { font-size: 14px; color: #666; margin-bottom: 0; }
 </style>
 
-<h1>System Settings</h1>
+<h1>Settings &amp; Admin</h1>
 
-<form id="settings-form">
-    <h3>General Settings</h3>
-    <div class="form-group">
-        <label for="wake-word">Wake Word</label>
-        <input type="text" id="wake-word" name="wake_word" placeholder="e.g., jarvis">
-    </div>
-    <div class="form-group">
-        <label for="mic-device">Microphone</label>
-        <select id="mic-device" name="mic_device_id"></select>
-    </div>
-    <div class="form-group">
-        <label for="speaker-device">Speaker</label>
-        <select id="speaker-device" name="speaker_device_id"></select>
-    </div>
+<!-- Tab Navigation -->
+<div class="tabs">
+    <button class="tab-link active" onclick="openTab(event, 'general')">General</button>
+    <button class="tab-link" onclick="openTab(event, 'files')">File Manager</button>
+    <button class="tab-link" onclick="openTab(event, 'tools')">Tools</button>
+</div>
 
-    <hr style="margin: 2rem 0;">
+<!-- General Settings Tab -->
+<div id="general" class="tab-content active">
+    <form id="settings-form">
+        <h3>Assistant Settings</h3>
+        <div class="form-group">
+            <label for="wake-word">Wake Word</label>
+            <input type="text" id="wake-word" name="wake_word" placeholder="e.g., jarvis">
+        </div>
+        <div class="form-group">
+            <label for="mic-device">Microphone</label>
+            <select id="mic-device" name="mic_device_id"></select>
+        </div>
+        <div class="form-group">
+            <label for="speaker-device">Speaker</label>
+            <select id="speaker-device" name="speaker_device_id"></select>
+        </div>
+        <hr style="margin: 2rem 0;">
+        <h3>Text-to-Speech Voice</h3>
+        <div class="form-group">
+            <label for="voice-name">Select Voice</label>
+            <input type="text" id="voice-name" list="voice-options" placeholder="Type to search for a voice..." autocomplete="off">
+            <datalist id="voice-options"></datalist>
+            <input type="hidden" id="voice_id" name="voice_id">
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Save All Settings</button>
+    </form>
+</div>
 
-    <h3>Text-to-Speech Voice</h3>
-    <p>Select a voice for the assistant. Voices are provided by <a href="https://elevenlabs.io/" target="_blank">ElevenLabs</a>.</p>
-    <div class="form-group">
-        <label for="voice-name">Select Voice</label>
-        <input type="text" id="voice-name" list="voice-options" placeholder="Type to search for a voice..." class="form-control" autocomplete="off">
-        <datalist id="voice-options"></datalist>
-        <input type="hidden" id="voice_id" name="voice_id">
+<!-- File Manager Tab -->
+<div id="files" class="tab-content">
+    <h3>Project Files</h3>
+    <p>View or edit core project files. Be careful with changes.</p>
+    <ul class="file-list">
+        {% for file in files %}
+        <li>
+            <code>{{ file }}</code>
+            <div>
+                <a href="{{ url_for('view_file', filename=file) }}" class="btn">View</a>
+                {% if google_auth_status and google_auth_status.email == 'sheldonsadler@gmail.com' %}
+                <a href="{{ url_for('edit_file', filename=file) }}" class="btn btn-primary">Edit</a>
+                {% endif %}
+            </div>
+        </li>
+        {% else %}
+        <li>No editable files found.</li>
+        {% endfor %}
+    </ul>
+</div>
+
+<!-- Tools Tab -->
+<div id="tools" class="tab-content">
+    <h3>Available Tools</h3>
+    <p>These are the functions the AI can use to perform tasks.</p>
+    <div class="tool-list">
+        {% for tool in tools %}
+        <div class="card">
+            <div class="card-body">
+                <h5>{{ to_friendly_name(tool.function.name) }}</h5>
+                <p>{{ tool.function.description }}</p>
+            </div>
+        </div>
+        {% else %}
+        <p>No tools are currently loaded.</p>
+        {% endfor %}
     </div>
-
-    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Save All Settings</button>
-</form>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function openTab(evt, tabName) {
+    let i, tabcontent, tablinks;
+    tabcontent = document.getElementsByClassName("tab-content");
+    for (i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = "none";
+    }
+    tablinks = document.getElementsByClassName("tab-link");
+    for (i = 0; i < tablinks.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(" active", "");
+    }
+    document.getElementById(tabName).style.display = "block";
+    evt.currentTarget.className += " active";
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // --- Globals ---
     const form = document.getElementById('settings-form');
@@ -74,12 +158,10 @@ document.addEventListener('DOMContentLoaded', function() {
     ]).then(([settings, voiceData]) => {
         voices = voiceData; // Cache the voices list
         
-        // Populate General settings
         document.getElementById('wake-word').value = settings.wake_word || 'jarvis';
         populateDevices(document.getElementById('mic-device'), '/api/microphones', settings.mic_device_id);
         populateDevices(document.getElementById('speaker-device'), '/api/speakers', settings.speaker_device_id);
         
-        // --- Populate Voice Datalist ---
         const voiceOptions = document.getElementById('voice-options');
         if (voiceOptions) {
             voices.forEach(voice => {
@@ -90,7 +172,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Set initial value for voice selection
         const voiceNameInput = document.getElementById('voice-name');
         const voiceIdInput = document.getElementById('voice_id');
         
@@ -101,25 +182,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 voiceIdInput.value = initialVoice.id;
             }
         }
-
-    }).catch(error => {
-        console.error("Failed to load initial settings:", error);
-        alert("There was an error loading page settings. Please try refreshing.");
-    });
+    }).catch(error => console.error("Failed to load settings:", error));
 
     // --- Event Listeners ---
     document.getElementById('voice-name').addEventListener('input', (e) => {
         const inputName = e.target.value;
         const voiceIdInput = document.getElementById('voice_id');
         const selectedVoice = voices.find(v => v.name === inputName);
-        
-        if (selectedVoice) {
-            voiceIdInput.value = selectedVoice.id;
-        } else {
-            // This allows users to type freely without breaking things, but
-            // only a valid selection will have an ID.
-            voiceIdInput.value = '';
-        }
+        voiceIdInput.value = selectedVoice ? selectedVoice.id : '';
     });
 
     form.addEventListener('submit', function(e) {
@@ -131,8 +201,11 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settingsToSave)
         }).then(res => {
-            if (res.ok) alert('Settings saved successfully!');
-            else alert('Failed to save settings.');
+            if (res.ok) {
+                alert('Settings saved successfully!');
+            } else {
+                alert('Failed to save settings.');
+            }
         });
     });
 });

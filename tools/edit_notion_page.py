@@ -29,6 +29,12 @@ TOOL_DEFINITION = {
     }
 }
 
+SAMPLE_PROMPTS = [
+    "Edit the Notion page with ID 'abc-123' and replace its content with 'This is the updated project status.'",
+    "Find the page about 'Q3 Marketing Plan' and overwrite it with the new plan details.",
+    "Update my 'Daily Journal' page to say 'Today I accomplished all my main goals.'"
+]
+
 def _get_notion_client() -> Client | None:
     """Helper to load token and initialize the Notion client."""
     token_data = notion_auth.load_token()

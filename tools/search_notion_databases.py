@@ -25,6 +25,12 @@ TOOL_DEFINITION = {
     }
 }
 
+SAMPLE_PROMPTS = [
+    "Search for a Notion database named 'Tasks'.",
+    "What databases can you find in my Notion?",
+    "Find all databases related to 'Meeting Notes'."
+]
+
 def _get_notion_client() -> Client | None:
     """Helper to load token and initialize the Notion client."""
     token_data = notion_auth.load_token()

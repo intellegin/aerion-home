@@ -19,6 +19,12 @@ TOOL_DEFINITION = {
     },
 }
 
+SAMPLE_PROMPTS = [
+    "Navigate to the settings page.",
+    "Open the file manager.",
+    "Show me the authentication page."
+]
+
 def run(tab_name: str) -> str:
     """
     Navigates the web UI to a specific tab.
