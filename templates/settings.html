@@ -53,8 +53,8 @@
     <form id="settings-form">
         <h3>Assistant Settings</h3>
         <div class="form-group">
-            <label for="wake-word">Wake Word</label>
-            <input type="text" id="wake-word" name="wake_word" placeholder="e.g., jarvis">
+            <label for="wake-word-select">Wake Word</label>
+            <select id="wake-word-select" name="wake_word"></select>
         </div>
         <div class="form-group">
             <label for="mic-device">Microphone</label>
@@ -151,6 +151,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function populateWakeWords(selectElement, currentWakeWord) {
+        fetch('/api/wakewords').then(res => res.json()).then(words => {
+            selectElement.innerHTML = ''; // Clear existing options
+            words.forEach(word => {
+                const option = document.createElement('option');
+                option.value = word.toLowerCase().replace(/ /g, '_'); // e.g., "Picovoice" -> "picovoice"
+                option.textContent = word;
+                if (option.value === currentWakeWord) option.selected = true;
+                selectElement.appendChild(option);
+            });
+        }).catch(error => console.error("Failed to load wake words:", error));
+    }
+
     // --- Load Initial Data ---
     Promise.all([
         fetch('/api/settings').then(res => res.json()),
@@ -158,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
     ]).then(([settings, voiceData]) => {
         voices = voiceData; // Cache the voices list
         
-        document.getElementById('wake-word').value = settings.wake_word || 'jarvis';
+        populateWakeWords(document.getElementById('wake-word-select'), settings.wake_word || 'jarvis');
         populateDevices(document.getElementById('mic-device'), '/api/microphones', settings.mic_device_id);
         populateDevices(document.getElementById('speaker-device'), '/api/speakers', settings.speaker_device_id);
         

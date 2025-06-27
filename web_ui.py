@@ -16,6 +16,7 @@ import sounddevice as sd # Import the sounddevice library
 from tools import tools, _load_tools, grouped_prompts # Import the new grouped prompts
 from audio_in import Transcriber # Corrected import path
 from command_handler import handle_command, conversation_history, SYSTEM_PROMPT
+import pvporcupine
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -260,6 +261,12 @@ def get_voices_endpoint():
     voices = get_cached_voices()
     return jsonify(voices)
 
+@app.route('/api/wakewords')
+def get_wakewords_endpoint():
+    """Endpoint to get available wake words."""
+    # The pvporcupine.KEYWORDS gives a list of built-in keywords
+    return jsonify(sorted([w.replace('_', ' ').title() for w in pvporcupine.KEYWORDS]))
+
 @app.route('/api/settings', methods=['GET'])
 def get_settings_endpoint():
     """Endpoint to get current settings."""
@@ -268,9 +275,23 @@ def get_settings_endpoint():
 @app.route('/api/settings', methods=['POST'])
 def save_settings_endpoint():
     """Endpoint to save settings."""
+    current_settings = get_settings()
     new_settings = request.json
+    
+    # Check if the wake word has changed
+    wake_word_changed = current_settings.get('wake_word') != new_settings.get('wake_word')
+    
     save_settings(new_settings)
     emit_status_update() # Emit status update on voice change
+    
+    # Restart the assistant if the wake word was changed
+    if wake_word_changed:
+        print("Wake word changed, restarting assistant...")
+        stop_app()
+        # Give it a moment to release resources before starting again
+        time.sleep(1) 
+        start_app()
+
     return jsonify({'status': 'success', 'settings': new_settings})
 
 @app.route('/start', methods=['POST'])

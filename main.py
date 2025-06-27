@@ -121,6 +121,18 @@ async def main(web_ui_socket_port=None):
         except (ValueError, TypeError):
             print(f"Warning: Invalid speaker device ID '{speaker_device_id_str}'. Using default.")
 
+    # --- Validate Microphone Device ---
+    if mic_device_id is not None:
+        try:
+            import sounddevice as sd
+            device_info = sd.query_devices(mic_device_id)
+            if device_info['max_input_channels'] == 0:
+                print(f"Warning: Device ID {mic_device_id} ('{device_info['name']}') is not an input device. Falling back to default.")
+                mic_device_id = None
+        except Exception as e:
+            print(f"Error validating microphone device ID {mic_device_id}: {e}. Falling back to default.")
+            mic_device_id = None
+
     # Create a callback that includes the speaker_device_id
     on_detection_callback = partial(on_wake_word_detected, speaker_device_id=speaker_device_id)
 
